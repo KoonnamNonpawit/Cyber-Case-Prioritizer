@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import sqlite3
 from flask import Flask, request, jsonify, render_template_string
 import pandas as pd
 import numpy as np
@@ -22,14 +23,14 @@ app.config.from_object(Config)
 
 
 # --- Database Layer (Abstraction) ---
-cases_db = []
+# cases_db = []
 
-def db_add_case(case_data):
-    cases_db.append(case_data)
-    return case_data
+# def db_add_case(case_data):
+#     cases_db.append(case_data)
+#     return case_data
 
-def db_get_all_cases_sorted():
-    return sorted(cases_db, key=lambda x: x.get('priority_score', 0), reverse=True)
+# def db_get_all_cases_sorted():
+#     return sorted(cases_db, key=lambda x: x.get('priority_score', 0), reverse=True)
 
 
 # --- ML Model and Preprocessing Pipeline ---
@@ -122,17 +123,136 @@ def rank_case():
         input_df = pd.DataFrame([data])[CATEGORICAL_FEATURES + ORDINAL_FEATURES + NUMERICAL_FEATURES + BINARY_FEATURES]
         priority_score = ml_model_pipeline.predict(input_df)[0]
         priority_score = max(0, min(100, priority_score))
-        new_case = {'id': str(uuid.uuid4()),'timestamp': datetime.datetime.now().isoformat(),'priority_score': float(priority_score),**data}
-        db_add_case(new_case)
-        return jsonify(new_case), 201
+
+        new_case_data = {
+            'id': str(uuid.uuid4()),
+            'timestamp': datetime.datetime.now().isoformat(),
+            'priority_score': float(priority_score),
+            **data
+        }
+
+        conn = sqlite3.connect('cyber_cases.db')
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO cases (id, timestamp, priority_score, case_type, estimated_financial_damage, num_victims, reputational_damage_level, sensitive_data_compromised, ongoing_threat, risk_of_evidence_loss, technical_complexity_level, initial_evidence_clarity)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            new_case_data['id'], new_case_data['timestamp'], new_case_data['priority_score'], new_case_data['case_type'],
+            new_case_data['estimated_financial_damage'], new_case_data['num_victims'], new_case_data['reputational_damage_level'],
+            new_case_data['sensitive_data_compromised'], new_case_data['ongoing_threat'], new_case_data['risk_of_evidence_loss'],
+            new_case_data['technical_complexity_level'], new_case_data['initial_evidence_clarity']
+        ))
+        conn.commit()
+        conn.close()
+        
+        # ส่งข้อมูลชุดที่บันทึกลง DB กลับไป
+        return jsonify(new_case_data), 201
     except Exception as e:
         app.logger.error(f"Prediction failed: {e}")
         return jsonify({"error": "Prediction failed due to server error."}), 500
+    
+    #     new_case = {'id': str(uuid.uuid4()),'timestamp': datetime.datetime.now().isoformat(),'priority_score': float(priority_score),**data}
+    #     # db_add_case(new_case)
+    #     new_case_id = str(uuid.uuid4())
+    #     new_case_data = {
+    #         'id': new_case_id,
+    #         'timestamp': datetime.datetime.now().isoformat(),
+    #         'priority_score': float(priority_score),
+    #         **data
+    #     }
+
+    #     conn = sqlite3.connect('cyber_cases.db')
+    #     cursor = conn.cursor()
+    #     cursor.execute('''
+    #         INSERT INTO cases (id, timestamp, priority_score, case_type, estimated_financial_damage, num_victims, reputational_damage_level, sensitive_data_compromised, ongoing_threat, risk_of_evidence_loss, technical_complexity_level, initial_evidence_clarity)
+    #         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    #     ''', (
+    #         new_case_data['id'], new_case_data['timestamp'], new_case_data['priority_score'], new_case_data['case_type'],
+    #         new_case_data['estimated_financial_damage'], new_case_data['num_victims'], new_case_data['reputational_damage_level'],
+    #         new_case_data['sensitive_data_compromised'], new_case_data['ongoing_threat'], new_case_data['risk_of_evidence_loss'],
+    #         new_case_data['technical_complexity_level'], new_case_data['initial_evidence_clarity']
+    #     ))
+    #     conn.commit()
+    #     conn.close()
+    #     return jsonify(new_case), 201
+    # except Exception as e:
+    #     app.logger.error(f"Prediction failed: {e}")
+    #     return jsonify({"error": "Prediction failed due to server error."}), 500
+
+# @app.route('/cases', methods=['GET'])
+# def get_ranked_cases():
+#     sorted_cases = db_get_all_cases_sorted()
+#     return jsonify(sorted_cases), 200
 
 @app.route('/cases', methods=['GET'])
 def get_ranked_cases():
-    sorted_cases = db_get_all_cases_sorted()
+    conn = sqlite3.connect('cyber_cases.db')
+    conn.row_factory = sqlite3.Row # ทำให้เข้าถึงข้อมูลแบบ dict ได้
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM cases ORDER BY priority_score DESC")
+    cases_from_db = cursor.fetchall()
+    conn.close()
+
+    # แปลงข้อมูลให้อยู่ในรูปแบบ list of dicts
+    sorted_cases = [dict(row) for row in cases_from_db]
     return jsonify(sorted_cases), 200
+
+@app.route('/retrain_model', methods=['POST'])
+def retrain_model():
+    global ml_model_pipeline
+    try:
+        # 1. ดึงข้อมูลทั้งหมดจากฐานข้อมูล
+        conn = sqlite3.connect('cyber_cases.db')
+        # ใช้ pandas อ่านข้อมูลจาก SQL query โดยตรง
+        df_train = pd.read_sql_query("SELECT * FROM cases", conn)
+        conn.close()
+
+        # ตรวจสอบว่ามีข้อมูลเพียงพอหรือไม่
+        if len(df_train) < 10: # กำหนดขั้นต่ำ เช่น 10 cases
+            return jsonify({"error": "Not enough data to retrain model."}), 400
+
+        # 2. เทรนโมเดล (นำโค้ดจากฟังก์ชัน train_ml_model เดิมมาปรับใช้)
+        # ... (ส่วนของ Preprocessor และ Pipeline) ...
+
+        X_train = df_train[CATEGORICAL_FEATURES + ORDINAL_FEATURES + NUMERICAL_FEATURES + BINARY_FEATURES]
+        y_train = df_train[TARGET_COLUMN]
+
+        ml_model_pipeline.fit(X_train, y_train)
+
+        # 3. บันทึกโมเดลที่เทรนใหม่
+        save_model(ml_model_pipeline, app.config['MODEL_PATH'])
+
+        return jsonify({"message": "Model retrained successfully."}), 200
+
+    except Exception as e:
+        app.logger.error(f"Model retraining failed: {e}")
+        return jsonify({"error": "Model retraining failed."}), 500
+    
+@app.route('/cases/<string:case_id>', methods=['DELETE'])
+def delete_case(case_id):
+    try:
+        conn = sqlite3.connect('cyber_cases.db')
+        cursor = conn.cursor()
+
+        # ตรวจสอบก่อนว่า case_id ที่ต้องการลบมีอยู่จริงหรือไม่
+        cursor.execute("SELECT id FROM cases WHERE id = ?", (case_id,))
+        case_to_delete = cursor.fetchone()
+
+        # ถ้าไม่พบ case_id นั้นในฐานข้อมูล
+        if case_to_delete is None:
+            conn.close()
+            return jsonify({"error": "Case not found"}), 404
+
+        # ถ้าพบ ให้ทำการลบ
+        cursor.execute("DELETE FROM cases WHERE id = ?", (case_id,))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({"message": f"Case with ID {case_id} was deleted successfully."}), 200
+
+    except Exception as e:
+        app.logger.error(f"Failed to delete case {case_id}: {e}")
+        return jsonify({"error": "Failed to delete case due to a server error."}), 500
 
 # --- Frontend HTML (No changes needed here) ---
 HTML_TEMPLATE = """
