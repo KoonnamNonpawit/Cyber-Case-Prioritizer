@@ -9,30 +9,25 @@ from app.services import ml_service
 
 main_bp = Blueprint('main', __name__)
 
-@main_bp.route('/')
-def index():
-    # ... (คัดลอกโค้ด HTML_TEMPLATE ทั้งหมดมาวางที่นี่) ...
-    HTML_TEMPLATE = """
-    <!DOCTYPE html>...
-    """
-    return render_template_string(HTML_TEMPLATE)
-
 @main_bp.route('/cases', methods=['GET'])
 def get_ranked_cases():
-    # ... (คัดลอกโค้ดของฟังก์ชัน get_ranked_cases มาวางที่นี่) ...
+    query = "SELECT * FROM cases ORDER BY priority_score DESC"
+
     conn = sqlite3.connect('cyber_cases.db')
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM cases ORDER BY priority_score DESC")
+    
+    cursor.execute(query)
+
     cases_from_db = cursor.fetchall()
     conn.close()
+    
     sorted_cases = [dict(row) for row in cases_from_db]
     return jsonify(sorted_cases), 200
 
 
 @main_bp.route('/rank_case', methods=['POST'])
 def rank_case():
-    # ... (คัดลอกโค้ดของฟังก์ชัน rank_case มาวางที่นี่) ...
     ml_model_pipeline = current_app.config['ML_PIPELINE']
     if not ml_model_pipeline:
         return jsonify({"error": "Model is not loaded or trained."}), 503
@@ -42,6 +37,11 @@ def rank_case():
         return jsonify({"error": "Invalid JSON data"}), 400
     
     try:
+        # Ensure required fields are present in the request
+        required_fields = ['case_number', 'description']
+        if not all(field in data for field in required_fields):
+            return jsonify({"error": f"Missing required fields: {', '.join(required_fields)}"}), 400
+
         input_df = pd.DataFrame([data])[ml_service.CATEGORICAL_FEATURES + ml_service.ORDINAL_FEATURES + ml_service.NUMERICAL_FEATURES + ml_service.BINARY_FEATURES]
         priority_score = ml_model_pipeline.predict(input_df)[0]
         priority_score = max(0, min(100, priority_score))
@@ -55,19 +55,31 @@ def rank_case():
         
         conn = sqlite3.connect('cyber_cases.db')
         cursor = conn.cursor()
+
         cursor.execute('''
-            INSERT INTO cases (id, timestamp, priority_score, case_type, estimated_financial_damage, num_victims, reputational_damage_level, sensitive_data_compromised, ongoing_threat, risk_of_evidence_loss, technical_complexity_level, initial_evidence_clarity)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO cases (
+                id, timestamp, priority_score, case_number, description, case_type, 
+                estimated_financial_damage, num_victims, reputational_damage_level, 
+                sensitive_data_compromised, ongoing_threat, risk_of_evidence_loss, 
+                technical_complexity_level, initial_evidence_clarity, reporter_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
-            new_case_data['id'], new_case_data['timestamp'], new_case_data['priority_score'], new_case_data['case_type'],
-            new_case_data['estimated_financial_damage'], new_case_data['num_victims'], new_case_data['reputational_damage_level'],
-            new_case_data['sensitive_data_compromised'], new_case_data['ongoing_threat'], new_case_data['risk_of_evidence_loss'],
-            new_case_data['technical_complexity_level'], new_case_data['initial_evidence_clarity']
+            new_case_data['id'], new_case_data['timestamp'], new_case_data['priority_score'],
+            new_case_data['case_number'], new_case_data['description'], new_case_data.get('case_type'),
+            new_case_data.get('estimated_financial_damage'), new_case_data.get('num_victims'), new_case_data.get('reputational_damage_level'),
+            new_case_data.get('sensitive_data_compromised'), new_case_data.get('ongoing_threat'), new_case_data.get('risk_of_evidence_loss'),
+            new_case_data.get('technical_complexity_level'), new_case_data.get('initial_evidence_clarity'),
+            new_case_data.get('reporter_id') # Using .get() for optional field
         ))
+        
         conn.commit()
         conn.close()
         
         return jsonify(new_case_data), 201
+    except KeyError as e:
+        current_app.logger.error(f"Prediction failed due to missing feature: {e}")
+        return jsonify({"error": f"Missing feature in request data: {e}"}), 400
     except Exception as e:
         current_app.logger.error(f"Prediction failed: {e}")
         return jsonify({"error": "Prediction failed due to server error."}), 500
@@ -111,4 +123,58 @@ def retrain_model():
     except Exception as e:
         current_app.logger.error(f"Model retraining failed: {e}")
         return jsonify({"error": "Model retraining failed."}), 500
+
+
+@main_bp.route('/cases/<string:case_id>', methods=['PUT'])
+def update_case(case_id):
+    ml_model_pipeline = current_app.config['ML_PIPELINE']
+    if not ml_model_pipeline:
+        return jsonify({"error": "Model is not loaded or trained."}), 503
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid JSON data"}), 400
+
+    try:
+        # คำนวณ priority_score ใหม่จากข้อมูลที่อัปเดต
+        input_df = pd.DataFrame([data])[ml_service.CATEGORICAL_FEATURES + ml_service.ORDINAL_FEATURES + ml_service.NUMERICAL_FEATURES + ml_service.BINARY_FEATURES]
+        priority_score = ml_model_pipeline.predict(input_df)[0]
+        priority_score = max(0, min(100, priority_score))
+
+        conn = sqlite3.connect('cyber_cases.db')
+        cursor = conn.cursor()
+
+        # ตรวจสอบว่าเคสมีอยู่จริงหรือไม่
+        cursor.execute("SELECT id FROM cases WHERE id = ?", (case_id,))
+        if cursor.fetchone() is None:
+            conn.close()
+            return jsonify({"error": "Case not found"}), 404
+
+        # อัปเดตข้อมูลในฐานข้อมูล
+        cursor.execute('''
+            UPDATE cases SET
+                priority_score = ?, case_type = ?, estimated_financial_damage = ?,
+                num_victims = ?, reputational_damage_level = ?, sensitive_data_compromised = ?,
+                ongoing_threat = ?, risk_of_evidence_loss = ?, technical_complexity_level = ?,
+                initial_evidence_clarity = ?
+            WHERE id = ?
+        ''', (
+            float(priority_score), data.get('case_type'), data.get('estimated_financial_damage'),
+            data.get('num_victims'), data.get('reputational_damage_level'), data.get('sensitive_data_compromised'),
+            data.get('ongoing_threat'), data.get('risk_of_evidence_loss'), data.get('technical_complexity_level'),
+            data.get('initial_evidence_clarity'), case_id
+        ))
+        conn.commit()
+        
+        # ดึงข้อมูลที่อัปเดตล่าสุดเพื่อส่งกลับไป
+        conn.row_factory = sqlite3.Row
+        cursor.execute("SELECT * FROM cases WHERE id = ?", (case_id,))
+        updated_case = dict(cursor.fetchone())
+        conn.close()
+
+        return jsonify(updated_case), 200
+
+    except Exception as e:
+        current_app.logger.error(f"Failed to update case {case_id}: {e}")
+        return jsonify({"error": "Failed to update case due to a server error."}), 500
     
