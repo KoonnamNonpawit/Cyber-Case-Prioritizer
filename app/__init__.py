@@ -1,5 +1,5 @@
 # app/__init__.py
-
+import os
 from flask import Flask
 from .services import ml_service
 
@@ -19,6 +19,11 @@ def create_app():
     
     # Store the loaded model in the app config for access in routes
     app.config['ML_PIPELINE'] = ml_pipeline
+
+    UPLOAD_FOLDER = os.path.join(app.root_path, '..', 'uploads')
+    app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+    app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'pdf'}
+    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
     # Register Blueprints
     from .routes.main import main_bp

@@ -25,10 +25,8 @@ def init_db():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS officers (
             id TEXT PRIMARY KEY NOT NULL,
-            position TEXT NOT NULL,
             first_name TEXT NOT NULL,
             last_name TEXT NOT NULL,
-            team TEXT,
             phone_number TEXT NOT NULL,
             email TEXT
         )
@@ -38,10 +36,14 @@ def init_db():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS cases (
             id TEXT PRIMARY KEY,
-            case_number TEXT,
+            case_number TEXT NOT NULL,
+            case_name TEXT NOT NULL,
             timestamp TEXT NOT NULL,
+            last_updated TEXT, 
+            date_closed TEXT,
+            status TEXT DEFAULT 'รับเรื่อง',
             priority_score REAL NOT NULL,
-            case_type TEXT,
+            case_type TEXT NOT NULL,
             description TEXT,
             estimated_financial_damage INTEGER,
             num_victims INTEGER,
@@ -66,7 +68,19 @@ def init_db():
             FOREIGN KEY (officer_id) REFERENCES officers(id) ON DELETE CASCADE
         )
     ''')
-
+    # 5. ตารางไฟล์หลักฐาน (Evidence Files)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS evidence_files (
+            id TEXT PRIMARY KEY,
+            case_id TEXT NOT NULL,
+            original_filename TEXT NOT NULL,
+            stored_filename TEXT NOT NULL UNIQUE,
+            file_path TEXT NOT NULL,
+            upload_timestamp TEXT NOT NULL,
+            FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE CASCADE
+        )
+    ''')
+    #6.ทำงานกับหน่วยงานอื่นๆ
     conn.commit()
     conn.close()
     print("Database with new schema initialized successfully.")
