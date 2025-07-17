@@ -67,11 +67,13 @@ def get_dashbroad_stats():
 
         # --- รวบรวมข้อมูลทั้งหมดเพื่อส่งกลับ ---
         response_data = {
-            "total_cases": total_cases,
-            "pending_cases": pending_cases,
-            "in_progress_cases": in_progress_cases,
-            "completed_cases": completed_cases,
-            "cases_today": cases_today,
+            "summary_stats": {
+                "total_cases": total_cases,
+                "pending_cases": pending_cases,
+                "in_progress_cases": in_progress_cases,
+                "completed_cases": completed_cases,
+                "cases_today": cases_today
+            },
             "cases_last_7_days": cases_last_7_days,
             "cases_by_type": cases_by_type,
             "monthly_case_breakdown": monthly_breakdown,

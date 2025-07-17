@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -20,104 +21,142 @@ import {
 } from "recharts";
 import Link from "next/link";
 
-const summaryStats = [
-  { title: "จำนวนคดีทั้งหมด", value: 123 },
-  { title: "คดีที่ต้องดำเนินการ", value: 123 },
-  { title: "คดีกำลังดำเนินการ", value: 123 },
-  { title: "คดีเสร็จสิ้น", value: 123 },
-];
 
-const caseTypes = [
-  { name: "Phishing", value: 35 },
-  { name: "Scam", value: 25 },
-  { name: "Hacking", value: 20 },
-  { name: "Cyberbullying", value: 10 },
-  { name: "Other", value: 8 },
-];
+interface ApiDashboardStats {
+  summary_stats: {
+    total_cases: number;
+    pending_cases: number;
+    in_progress_cases: number;
+    completed_cases: number;
+    cases_today: number;
+  };
+  cases_by_type: Record<string, number>;
+  monthly_case_breakdown: Record<string, Record<string, number>>;
+  top_5_priority_cases: {
+    id: string;
+    case_number: string;
+    case_name: string;
+    description: string | null;
+    timestamp: string;
+    num_victims: number;
+    estimated_financial_damage: number;
+    priority_score: number;
+  }[];
+  daily_cases_last_7_days: {
+    day: string;
+    count: number;
+  }[];
+}
 
-const monthlyData = [
-  { month: "ม.ค.", phishing: 120, scam: 40, hacking: 40, cyberbullying: 100, other: 10 },
-  { month: "ก.พ.", phishing: 180, scam: 70, hacking: 50, cyberbullying: 100, other: 10 },
-  { month: "มี.ค.", phishing: 200, scam: 100, hacking: 100, cyberbullying: 100, other: 10 },
-  { month: "เม.ย.", phishing: 150, scam: 120, hacking: 80, cyberbullying: 100, other: 10 },
-  { month: "พ.ค.", phishing: 220, scam: 160, hacking: 120, cyberbullying: 100, other: 10 },
-  { month: "มิ.ย.", phishing: 280, scam: 180, hacking: 140, cyberbullying: 100, other: 10 },
-  { month: "ก.ค.", phishing: 200, scam: 150, hacking: 100, cyberbullying: 100, other: 10 },
-];
+interface MonthlyChartData {
+  month: string;
+  [key: string]: string | number; // Allows 'month' to be a string, and all other keys to have string or number values.
+}
 
-const weeklyData = [
-  { day: "จ", value: 10 },
-  { day: "อ", value: 20 },
-  { day: "พ", value: 25 },
-  { day: "พฤ", value: 30 },
-  { day: "ศ", value: 40 },
-  { day: "ส", value: 35 },
-  { day: "อา", value: 90 },
-];
+interface TransformedStats {
+  summaryStats: { title: string; value: number }[];
+  casesToday: number;
+  caseTypes: { name: string; value: number }[];
+  monthlyData: MonthlyChartData[];
+  weeklyData: { day: string; value: number }[];
+  topCases: {
+    id: string;
+    title: string;
+    victims: number;
+    damage: string;
+    date: string;
+    summary: string | null;
+    rating: number;
+  }[];
+}
 
-const topCases = [
-  {
-    id: "T2507110001234",
-    title: "คดีฟิชชิงธนาคาร",
-    victims: 123,
-    damage: "3,000,000",
-    date: "11/02/68",
-    summary: "ผู้เสียหายได้รับ SMS ปลอมแอบอ้างธนาคาร...",
-    rating: 5,
-  },
-  {
-    id: "T2507110001235",
-    title: "คดีหลอกโอนเงิน",
-    victims: 97,
-    damage: "1,500,000",
-    date: "15/02/68",
-    summary: "มิจฉาชีพโทรหลอกให้โอนเงินผ่านแอป...",
-    rating: 4,
-  },
-  {
-    id: "T2507110001236",
-    title: "คดีแฮกข้อมูลบัตรเครดิต",
-    victims: 20,
-    damage: "800,000",
-    date: "20/02/68",
-    summary: "ข้อมูลบัตรรั่วจากการชำระเงินผ่านเว็บไซต์ปลอม...",
-    rating: 3,
-  },
-  {
-    id: "T2507110001237",
-    title: "คดีปลอมเพจราชการ",
-    victims: 55,
-    damage: "2,000,000",
-    date: "22/02/68",
-    summary: "มีการสร้างเพจปลอมแอบอ้างราชการเพื่อหลอกลวง...",
-    rating: 4,
-  },
-  {
-    id: "T2507110001238",
-    title: "คดีส่งลิงก์หลอกขโมยรหัส",
-    victims: 30,
-    damage: "1,000,000",
-    date: "01/03/68",
-    summary: "ผู้เสียหายคลิกลิงก์ปลอม ทำให้รหัสผ่านหลุด...",
-    rating: 5,
-  },
-];
+function getStarRating(score: number): number {
+  if (score <= 0) return 1;
+  return Math.ceil(score / 20);
+}
+
 
 export default function DashboardPage() {
+
+  const [stats, setStats] = useState<TransformedStats | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetchDashboardData() {
+      try {
+        const apiUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:5001'}/dashboard`;
+        
+        const response = await fetch(apiUrl);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data: ApiDashboardStats = await response.json();
+
+        console.log(data);
+
+        const transformedData: TransformedStats = {
+          summaryStats: [
+            { title: "จำนวนคดีทั้งหมด", value: data.summary_stats.total_cases },
+            { title: "คดีรับเรื่อง", value: data.summary_stats.pending_cases },
+            { title: "คดีกำลังสืบสวน", value: data.summary_stats.in_progress_cases },
+            { title: "คดีปิดแล้ว", value: data.summary_stats.completed_cases },
+          ],
+          casesToday: data.summary_stats.cases_today,
+          caseTypes: Object.entries(data.cases_by_type).map(([name, value]) => ({ name, value })),
+          monthlyData: Object.entries(data.monthly_case_breakdown).map(([month, types]) => ({ month, ...(types as Record<string, number>) })),
+          weeklyData: data.daily_cases_last_7_days.map(item => ({
+            day: new Date(item.day).toLocaleDateString('th-TH', { weekday: 'short' }),
+            value: item.count
+          })),
+          topCases: data.top_5_priority_cases.map(caseItem => ({
+            id: caseItem.id,
+            title: caseItem.case_name,
+            victims: caseItem.num_victims,
+            damage: caseItem.estimated_financial_damage.toLocaleString(),
+            date: new Date(caseItem.timestamp).toLocaleDateString('th-TH'),
+            summary: caseItem.description,
+            rating: getStarRating(caseItem.priority_score)
+          })),
+        };
+
+        setStats(transformedData);
+      } catch (e: any) {
+        setError(e.message);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchDashboardData();
+  }, []);
+
+  if (loading) return <div className="flex justify-center items-center h-screen">Loading Dashboard...</div>;
+  if (error) return <div className="flex justify-center items-center h-screen text-red-500">Error: {error}</div>;
+  if (!stats) return <div className="flex justify-center items-center h-screen">No data available.</div>;
+
+  // --- Dynamic Bar components for Monthly Chart ---
+  const allCaseTypesForMonthlyChart = stats.monthlyData.reduce<string[]>((acc, monthData) => {
+    Object.keys(monthData).forEach(key => {
+      if (key !== 'month' && !acc.includes(key)) acc.push(key);
+    });
+    return acc;
+  }, []);
+  const COLORS = ["#273880", "#2A3FA3", "#365EDA", "#4B7BE6", "#6D9DED", "#86B5F2"];
+
   return (
     <div className="min-h-screen space-y-10 pb-10">
       <div className="max-w-7xl mx-auto p-4 space-y-6 bg-[#ECEBF2] rounded-xl">
         <h1 className="text-3xl font-bold text-blue-900">Dashboard</h1>
 
         <div className="grid grid-cols-4 gap-4">
-          {summaryStats.map((stat, i) => (
+          {stats.summaryStats.map((stat, i) => (
             <Card
               key={i}
-              className={`p-4 ${
-                i === 0
-                  ? "bg-gradient-to-r from-blue-800 to-blue-400 text-white"
-                  : "bg-[#ffffff]"
-              }`}
+              className={`p-4 ${i === 0
+                ? "bg-gradient-to-r from-blue-800 to-blue-400 text-white"
+                : "bg-[#ffffff]"
+                }`}
             >
               <CardContent>
                 <p className="text-lg font-semibold">{stat.title}</p>
@@ -136,8 +175,8 @@ export default function DashboardPage() {
             <CardContent>
               <ResponsiveContainer width="100%" height={250}>
                 <PieChart>
-                  <Pie data={caseTypes} dataKey="value" nameKey="name" outerRadius={120}>
-                    {caseTypes.map((entry, index) => (
+                  <Pie data={stats.caseTypes} dataKey="value" nameKey="name" outerRadius={120}>
+                    {stats.caseTypes.map((entry, index) => (
                       <Cell
                         key={`cell-${index}`}
                         fill={["#273880", "#2A3FA3", "#365EDA", "#4B7BE6", "#6D9DED"][index % 5]}
@@ -156,7 +195,7 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={monthlyData}>
+                <BarChart data={stats.monthlyData}>
                   <XAxis dataKey="month" />
                   <YAxis />
                   <Tooltip />
@@ -172,39 +211,39 @@ export default function DashboardPage() {
           </Card>
         </div>
 
-       {/* Weekly Chart + New Cases Today */}
-      <div className="grid grid-cols-3 gap-4">
-       
-
-        {/* 📊 BarChart 7 วัน */}
-        <Card className="col-span-2 bg-[#ffffff]">
-          <CardHeader>
-            <CardTitle>จำนวนคดีที่รับแจ้งใน 7 วันล่าสุด</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={weeklyData}>
-                <XAxis dataKey="day" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="value" fill="#D9D9D9" activeBar={{ fill: "#FFD700" }} />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        <Card className="col-span-1 p-4 bg-gradient-to-r from-blue-800 to-blue-400 text-white">
-        <CardHeader>
-          <CardTitle>คดีใหม่วันนี้</CardTitle>
-        </CardHeader>
-        <CardContent className="relative flex flex-col items-center justify-center h-[140px] text-center">
-          <p className="text-5xl font-bold">123</p>
-          <p className="absolute bottom-2 left-4 text-xs text-white/80">ข้อมูลล่าสุดเมื่อ 2 วันที่แล้ว</p>
-        </CardContent>
-      </Card>
+        {/* Weekly Chart + New Cases Today */}
+        <div className="grid grid-cols-3 gap-4">
 
 
-      </div>
+          {/* 📊 BarChart 7 วัน */}
+          <Card className="col-span-2 bg-[#ffffff]">
+            <CardHeader>
+              <CardTitle>จำนวนคดีที่รับแจ้งใน 7 วันล่าสุด</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={stats.weeklyData}>
+                  <XAxis dataKey="day" />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="value" fill="#D9D9D9" activeBar={{ fill: "#FFD700" }} />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          <Card className="col-span-1 p-4 bg-gradient-to-r from-blue-800 to-blue-400 text-white">
+            <CardHeader>
+              <CardTitle>คดีใหม่วันนี้</CardTitle>
+            </CardHeader>
+            <CardContent className="relative flex flex-col items-center justify-center h-[140px] text-center">
+              <p className="text-5xl font-bold">123</p>
+              <p className="absolute bottom-2 left-4 text-xs text-white/80">ข้อมูลล่าสุดเมื่อ 2 วันที่แล้ว</p>
+            </CardContent>
+          </Card>
+
+
+        </div>
 
       </div>
 
@@ -216,7 +255,7 @@ export default function DashboardPage() {
           <CardContent>
             <div className="overflow-x-auto">
               <div className="flex gap-4 w-max">
-                {topCases.map((caseItem) => (
+                {stats.topCases.map((caseItem) => (
                   <Card
                     key={caseItem.id}
                     asChild
