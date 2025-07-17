@@ -1,10 +1,13 @@
 # app/__init__.py
 import os
 from flask import Flask
+from flask_cors import CORS
 from .services import ml_service
 
 def create_app():
     app = Flask(__name__)
+
+    CORS(app)
     
     # Configuration
     app.config['MODEL_PATH'] = 'cyber_case_model_rf.joblib'
