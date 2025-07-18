@@ -33,7 +33,6 @@ interface ApiDashboardStats {
   cases_by_type: Record<string, number>;
   monthly_case_breakdown: Record<string, Record<string, number>>;
   top_5_priority_cases: {
-    id: string;
     case_number: string;
     case_name: string;
     description: string | null;
@@ -42,7 +41,7 @@ interface ApiDashboardStats {
     estimated_financial_damage: number;
     priority_score: number;
   }[];
-  daily_cases_last_7_days: {
+  cases_last_7_days: {
     day: string;
     count: number;
   }[];
@@ -60,7 +59,7 @@ interface TransformedStats {
   monthlyData: MonthlyChartData[];
   weeklyData: { day: string; value: number }[];
   topCases: {
-    id: string;
+    case_number: string;
     title: string;
     victims: number;
     damage: string;
@@ -105,12 +104,12 @@ export default function DashboardPage() {
           casesToday: data.summary_stats.cases_today,
           caseTypes: Object.entries(data.cases_by_type).map(([name, value]) => ({ name, value })),
           monthlyData: Object.entries(data.monthly_case_breakdown).map(([month, types]) => ({ month, ...(types as Record<string, number>) })),
-          weeklyData: data.daily_cases_last_7_days.map(item => ({
+          weeklyData: data.cases_last_7_days.map(item => ({
             day: new Date(item.day).toLocaleDateString('th-TH', { weekday: 'short' }),
             value: item.count
           })),
           topCases: data.top_5_priority_cases.map(caseItem => ({
-            id: caseItem.id,
+            case_number : caseItem.case_number,
             title: caseItem.case_name,
             victims: caseItem.num_victims,
             damage: caseItem.estimated_financial_damage.toLocaleString(),
@@ -257,13 +256,13 @@ export default function DashboardPage() {
               <div className="flex gap-4 w-max">
                 {stats.topCases.map((caseItem) => (
                   <Card
-                    key={caseItem.id}
+                    key={caseItem.case_number}
                     asChild
                     className="bg-white shadow-md p-4 min-w-[300px] hover:ring-2 hover:ring-blue-500 rounded-xl cursor-pointer transition"
                   >
-                    <Link href={`/cases/${caseItem.id}`}>
+                    <Link href={`/cases/${caseItem.case_number}`}>
                       <CardContent className="space-y-2">
-                        <p className="text-sm font-semibold">{caseItem.id}</p>
+                        <p className="text-sm font-semibold">{caseItem.case_number}</p>
                         <p className="font-bold text-blue-900">{caseItem.title}</p>
                         <p className="text-sm text-gray-600">
                           📄 {caseItem.victims} 👛 {caseItem.damage} 📅 {caseItem.date}

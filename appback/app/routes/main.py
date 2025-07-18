@@ -39,9 +39,17 @@ def get_dashbroad_stats():
         cases_today = cursor.execute("SELECT COUNT(id) FROM cases WHERE date(timestamp) = ?", (today_str,)).fetchone()[0]
 
         # 4. คดีใน 7 วันล่าสุด
-        seven_days_ago = (datetime.date.today() - datetime.timedelta(days=7)).isoformat()
-        cases_last_7_days = cursor.execute("SELECT COUNT(id) FROM cases WHERE date(timestamp) >= ?", (seven_days_ago,)).fetchone()[0]
-
+        seven_days_ago = (datetime.date.today() - datetime.timedelta(days=6)).isoformat()
+        daily_cases_rows = cursor.execute("""
+            SELECT date(timestamp) as day, COUNT(id) as count
+            FROM cases
+            WHERE date(timestamp) >= ?
+            GROUP BY day
+            ORDER BY day ASC
+        """, (seven_days_ago,)).fetchall()
+        
+        # จัดรูปแบบข้อมูลให้เป็น list ของ dict ซึ่งจะกลายเป็น JSON Array
+        cases_last_7_days = [dict(row) for row in daily_cases_rows]
         # 5. จำนวนคดีแต่ละประเภท
         cases_by_type_rows = cursor.execute("SELECT case_type, COUNT(id) FROM cases GROUP BY case_type").fetchall()
         cases_by_type = {row['case_type']: row['COUNT(id)'] for row in cases_by_type_rows}

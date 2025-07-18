@@ -61,12 +61,7 @@ const [error, setError] = useState<string | null>(null);
 
 export default function ReportCasePage() {
   const router = useRouter();
-  const [isLoading, setIsLoading] = useState(false);
 
-  const someFunction = () => {
-    // You can USE the state setter here...
-    setMyState('new value');
-  }
   // 1. --- State Management: สร้าง state เพื่อเก็บข้อมูลจากฟอร์มทั้งหมด ---
   const [caseDetails, setCaseDetails] = useState<Partial<CaseDetails>>({});
   const [complainant, setComplainant] = useState<Partial<Complainant>>({});
