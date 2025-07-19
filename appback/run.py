@@ -1,6 +1,10 @@
 # run.py
 
 from app import create_app
+from flask import Flask
+from dotenv import load_dotenv
+
+load_dotenv()
 from app.database import init_db
 from flask_cors import CORS
 # Initialize the database if it doesn't exist
