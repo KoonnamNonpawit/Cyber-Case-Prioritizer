@@ -72,10 +72,10 @@ def train_ml_model():
         conn.close()
         
         if len(db_df) >= MINIMUM_RECORDS_FOR_TRAINING:
-            print(f"✅ Training RandomForest model with {len(db_df)} HUMAN-VERIFIED records from the database...")
+            print(f"Training RandomForest model with {len(db_df)} HUMAN-VERIFIED records from the database...")
             df_train = db_df
         else:
-            print(f"⚠️ Not enough human-verified data in DB ({len(db_df)} records). Falling back to sample data.")
+            print(f"Not enough human-verified data in DB ({len(db_df)} records). Falling back to sample data.")
             
     except Exception as e:
         print(f"Could not read from database, falling back to sample data. Error: {e}")
@@ -127,5 +127,5 @@ def train_ml_model():
     # Train the pipeline on the prepared data
     pipeline.fit(X_train, y_train)
 
-    print("✅ RandomForest Model trained successfully.")
+    print("RandomForest Model trained successfully.")
     return pipeline
