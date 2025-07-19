@@ -61,15 +61,19 @@ def get_dashbroad_stats():
         for row in monthly_breakdown_rows:
             monthly_breakdown[row['month']][row['case_type']] = row['count']
         
-        # จัดโครงสร้างข้อมูลใหม่
-        cursor.execute("SELECT TO_CHAR(timestamp, 'YYYY-MM') as month, case_type, COUNT(id) as count FROM cases WHERE case_type IS NOT NULL GROUP BY month, case_type ORDER BY month")
-        monthly_breakdown_rows = cursor.fetchall()
-        monthly_breakdown = defaultdict(dict)
-        for row in monthly_breakdown_rows:
-            monthly_breakdown[row['month']][row['case_type']] = row['count']
-        
         cursor.execute("SELECT id, case_number, case_name, priority_score FROM cases ORDER BY priority_score DESC LIMIT 5")
         top_5_cases = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT suspects.account, COUNT(DISTINCT suspects.case_number) AS num_cases
+            FROM suspects 
+            JOIN cases ON suspects.case_number = cases.case_number
+            WHERE cases.group_id IS NOT NULL
+            GROUP BY suspects.account
+            ORDER BY num_cases DESC
+            LIMIT 5
+        """)
+        top_accounts_from_suspects = cursor.fetchall()
 
         cursor.close()
         conn.close()
@@ -86,7 +90,8 @@ def get_dashbroad_stats():
             "cases_last_7_days": cases_last_7_days,
             "cases_by_type": cases_by_type,
             "monthly_case_breakdown": monthly_breakdown,
-            "top_5_priority_cases": top_5_cases 
+            "top_5_priority_cases": top_5_cases,
+            "top_accounts_from_suspects": top_accounts_from_suspects
         }
         
         return jsonify(response_data), 200
@@ -114,7 +119,6 @@ def get_all_cases():
     where_clause = " WHERE 1=1"
     params = []
     
-    search_term = request.args.get('q')
     search_term = request.args.get('q')
     if search_term:
         where_clause += " AND (REPLACE(c.case_number, '-', '') ILIKE %s OR c.case_name ILIKE %s)"
