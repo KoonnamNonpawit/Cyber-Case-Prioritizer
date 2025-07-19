@@ -129,6 +129,7 @@ def get_all_cases():
         'case_type': {'column': 'c.case_type', 'operator': '='},
         'reputational_damage_level': {'column': 'c.reputational_damage_level', 'operator': '='},
         'technical_complexity_level': {'column': 'c.technical_complexity_level', 'operator': '='},
+        'group_id': {'column': 'c.group_id', 'operator': 'ILIKE', 'formatter': lambda v: f"%{v}%"},
         
         # Boolean fields from 'cases' table
         'sensitive_data_compromised': {'column': 'c.sensitive_data_compromised', 'operator': '=', 'formatter': lambda v: 1 if v.lower() == 'true' else 0},
@@ -146,13 +147,9 @@ def get_all_cases():
     for arg_name, mapping in filter_map.items():
         arg_value = request.args.get(arg_name)
         if arg_value:
-            where_clause += mapping['clause']
-            
             formatted_value = mapping.get('formatter', lambda v: v)(arg_value)
-            if isinstance(formatted_value, tuple):
-                params.extend(formatted_value)
-            else:
-                params.append(formatted_value)
+            where_clause += f" AND {mapping['column']} {mapping['operator']} %s"
+            params.append(formatted_value)
 
     try:
         conn = get_db_conn()
@@ -251,24 +248,46 @@ def rank_case():
         current_app.logger.error(f"Failed to create case: {e}")
         return jsonify({"error": "Failed to create case due to a server error."}), 500
 
-@main_bp.route('/group_cases/<string:group_case>' , methods=['GET'])
-def get_all_group_cases():
+@main_bp.route('/group_cases/<string:group_case>', methods=['GET'])
+def get_all_group_cases(group_case):
     page = request.args.get('page', default=1, type=int)
     limit = 12
     offset = (page - 1) * limit
+    search_term = request.args.get('q', '').strip()
 
     try:
-        conn = get_db_conn
+        conn = get_db_conn()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
 
-        cursor.execute("SELECT * FROM cases WHERE group_id = ?", (group_id,))
-        case_data = cursor.fetchone()
+        base_query = """
+            SELECT * FROM cases 
+            WHERE group_id = %s
+        """
+        params = [group_case]
 
-        conn.commit()
+        if search_term:
+            # ใช้ ILIKE และ wildcard % สำหรับค้นหาแบบใกล้เคียง case_name และ case_number
+            base_query += " AND (case_name ILIKE %s OR REPLACE(case_number, '-', '') ILIKE %s)"
+            like_pattern = f"%{search_term}%"
+            params.extend([like_pattern, like_pattern])
+
+        base_query += " ORDER BY timestamp DESC LIMIT %s OFFSET %s"
+        params.extend([limit, offset])
+
+        cursor.execute(base_query, tuple(params))
+        case_data = cursor.fetchall()
+
+        cursor.close()
         conn.close()
 
+        return jsonify({
+            "page": page,
+            "limit": limit,
+            "data": [dict(row) for row in case_data]
+        }), 200
+
     except Exception as e:
-        current_app.logger.error(f"Failed to get case {case_id}: {e}")
+        current_app.logger.error(f"Failed to get group cases {group_case}: {e}")
         return jsonify({"error": "Failed to retrieve case details."}), 500
 
 @main_bp.route('/cases/<string:case_id>', methods=['GET'])
