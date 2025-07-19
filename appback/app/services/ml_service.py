@@ -1,7 +1,8 @@
 # app/services/ml_service.py
 
 import pandas as pd
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder, StandardScaler
 from sklearn.compose import ColumnTransformer
@@ -27,6 +28,12 @@ REPUTATIONAL_DAMAGE_ORDER = ['None', 'Low', 'Medium', 'High', 'Critical']
 TECHNICAL_COMPLEXITY_ORDER = ['Low', 'Medium', 'High', 'Very High', 'Extreme']
 INITIAL_EVIDENCE_ORDER = ['Low', 'Medium', 'High', 'Very High']
 
+def get_db_conn():
+    db_url = os.environ.get('DATABASE_URL', 'postgresql://postgres.hpqegncuwpiegerakwan:cyberwarrior29!@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres') 
+    if not db_url:
+        raise Exception("DATABASE_URL environment variable is not set. Please create a .env file.")
+    conn = psycopg2.connect(db_url)
+    return conn
 
 # --- 2. Functions to Save and Load the Model ---
 def save_model(pipeline, path):
@@ -56,11 +63,11 @@ def train_ml_model():
 
     # Attempt to load high-quality, human-verified data from the database first
     try:
-        conn = sqlite3.connect('cyber_cases.db')
-        # This query prioritizes the human-verified score for training
+        conn = get_db_conn
+        cursor = conn.cursor()
         query = """
             SELECT 
-                COALESCE(verified_score, priority_score) as priority_score,
+                COALESCE(verified_score, priority_score) AS priority_score,
                 case_type, estimated_financial_damage, num_victims, reputational_damage_level, 
                 sensitive_data_compromised, ongoing_threat, risk_of_evidence_loss, 
                 technical_complexity_level, initial_evidence_clarity, evidence_count, 
@@ -68,18 +75,24 @@ def train_ml_model():
             FROM cases
             WHERE verified_score IS NOT NULL
         """
-        db_df = pd.read_sql_query(query, conn)
+        cursor.execute(query)
+        records = cursor.fetchall()
         conn.close()
         
-        if len(db_df) >= MINIMUM_RECORDS_FOR_TRAINING:
-            print(f"Training RandomForest model with {len(db_df)} HUMAN-VERIFIED records from the database...")
-            df_train = db_df
-        else:
-            print(f"Not enough human-verified data in DB ({len(db_df)} records). Falling back to sample data.")
-            
-    except Exception as e:
-        print(f"Could not read from database, falling back to sample data. Error: {e}")
+        df_train = pd.DataFrame(records)
+        for col in BINARY_FEATURES:
+            if col in df_train.columns:
+                df_train[col] = df_train[col].astype(bool)
 
+        if len(df_train) >= MINIMUM_RECORDS_FOR_TRAINING:
+            print(f"Training with {len(df_train)} records from PostgreSQL.")
+        else:
+            print(f"Not enough data from PostgreSQL ({len(df_train)} records). Using sample data.")
+            df_train = None
+    except Exception as e:
+        print(f"Failed to load data from PostgreSQL: {e}")
+        df_train = None
+        
     # If database loading fails or data is insufficient, use a hardcoded sample dataset
     if df_train is None:
         print("Using hardcoded sample data for training.")
