@@ -77,4 +77,4 @@ def update_case_links(case_id: str):
     
     conn.commit()
     conn.close()
-    print(f"✅ Case linking complete for group {existing_group_id}. Total linked cases: {len(linked_case_ids)}.")
+    print(f"Case linking complete for group {existing_group_id}. Total linked cases: {len(linked_case_ids)}.")
