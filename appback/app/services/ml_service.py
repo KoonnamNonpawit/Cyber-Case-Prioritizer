@@ -14,12 +14,17 @@ import os
 # These are the columns the model will learn from.
 CATEGORICAL_FEATURES = ['case_type']
 ORDINAL_FEATURES = ['reputational_damage_level', 'technical_complexity_level', 'initial_evidence_clarity']
-BINARY_FEATURES = ['sensitive_data_compromised', 'ongoing_threat', 'risk_of_evidence_loss', 'has_actionable_evidence']
+BINARY_FEATURES = [
+    'sensitive_data_compromised', 'ongoing_threat', 'risk_of_evidence_loss',
+    'has_actionable_evidence', 'is_grouped'  
+]
 NUMERICAL_FEATURES = [
     'estimated_financial_damage', 
     'num_victims', 
-    'evidence_count'
-    # 'days_since_creation', 'num_linked_cases' etc. could be added here later
+    'evidence_count',
+    'days_since_creation', 
+    'num_linked_cases'
+
 ]
 TARGET_COLUMN = 'priority_score'
 
@@ -63,16 +68,23 @@ def train_ml_model():
 
     # Attempt to load high-quality, human-verified data from the database first
     try:
-        conn = get_db_conn
-        cursor = conn.cursor()
+        conn = get_db_conn()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         query = """
-            SELECT 
+            SELECT
                 COALESCE(verified_score, priority_score) AS priority_score,
                 case_type, estimated_financial_damage, num_victims, reputational_damage_level, 
                 sensitive_data_compromised, ongoing_threat, risk_of_evidence_loss, 
                 technical_complexity_level, initial_evidence_clarity, evidence_count, 
-                has_actionable_evidence
-            FROM cases
+                has_actionable_evidence,
+                group_id IS NOT NULL AS is_grouped,
+                DATE_PART('day', NOW() - timestamp) AS days_since_creation,
+                (
+                    SELECT COUNT(*) - 1
+                    FROM cases c2
+                    WHERE c2.group_id = c1.group_id AND c1.group_id IS NOT NULL
+                    ) AS num_linked_cases
+            FROM cases c1
             WHERE verified_score IS NOT NULL
         """
         cursor.execute(query)
@@ -92,7 +104,7 @@ def train_ml_model():
     except Exception as e:
         print(f"Failed to load data from PostgreSQL: {e}")
         df_train = None
-        
+
     # If database loading fails or data is insufficient, use a hardcoded sample dataset
     if df_train is None:
         print("Using hardcoded sample data for training.")
@@ -108,9 +120,16 @@ def train_ml_model():
             'initial_evidence_clarity': ['High', 'Low', 'High', 'Very High', 'Medium', 'Low', 'Very High'],
             'evidence_count': [5, 2, 10, 1, 3, 0, 4],
             'has_actionable_evidence': [True, True, True, False, True, False, True],
-            'priority_score': [98, 85, 95, 58, 64, 45, 75]
+            'priority_score': [98, 85, 95, 58, 64, 45, 75],
+            'days_since_creation': [15, 3, 45, 90, 5, 2, 30],
+            'num_linked_cases': [2, 0, 4, 0, 0, 1, 0]
         }
         df_train = pd.DataFrame(data)
+
+    if 'is_grouped' not in BINARY_FEATURES:
+        BINARY_FEATURES.append('is_grouped')
+    if 'days_since_creation' not in NUMERICAL_FEATURES:
+        NUMERICAL_FEATURES.append('days_since_creation')
 
     # --- Preprocessing Pipeline ---
     # Defines how to transform each type of feature before feeding it to the model

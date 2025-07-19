@@ -251,6 +251,26 @@ def rank_case():
         current_app.logger.error(f"Failed to create case: {e}")
         return jsonify({"error": "Failed to create case due to a server error."}), 500
 
+@main_bp.route('/group_cases/<string:group_case>' , methods=['GET'])
+def get_all_group_cases():
+    page = request.args.get('page', default=1, type=int)
+    limit = 12
+    offset = (page - 1) * limit
+
+    try:
+        conn = get_db_conn
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        cursor.execute("SELECT * FROM cases WHERE group_id = ?", (group_id,))
+        case_data = cursor.fetchone()
+
+        conn.commit()
+        conn.close()
+
+    except Exception as e:
+        current_app.logger.error(f"Failed to get case {case_id}: {e}")
+        return jsonify({"error": "Failed to retrieve case details."}), 500
+
 @main_bp.route('/cases/<string:case_id>', methods=['GET'])
 def get_case_by_id(case_id):
     try:
