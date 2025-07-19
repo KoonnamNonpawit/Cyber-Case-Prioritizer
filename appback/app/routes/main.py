@@ -115,6 +115,13 @@ def get_all_cases():
     
     where_clause = " WHERE 1=1"
     params = []
+    
+    search_term = request.args.get('q')
+    if search_term:
+        # Search in both case_number (ignoring hyphens) and case_name
+        where_clause += " AND (REPLACE(c.case_number, '-', '') LIKE ? OR c.case_name LIKE ?)"
+        processed_term = f"%{search_term.replace('-', '')}%"
+        params.extend([processed_term, f"%{search_term}%"])
 
     filter_map = {
         # Text fields from 'cases' table
@@ -204,7 +211,7 @@ def rank_case():
         # --- แก้ไขส่วนนี้: เพิ่มคอลัมน์ให้ตรงกับ VALUES ---
         cursor.execute("""
             INSERT INTO cases (
-                id, case_number, case_name, timestamp, last_updated, date_closed, status, priority_score, 
+                id, case_number, case_name, date(timestamp), last_updated, date_closed, status, priority_score, 
                 case_type, description, estimated_financial_damage, num_victims, 
                 reputational_damage_level, sensitive_data_compromised, ongoing_threat, 
                 risk_of_evidence_loss, technical_complexity_level, initial_evidence_clarity, 
