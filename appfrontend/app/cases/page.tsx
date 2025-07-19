@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Plus, SlidersHorizontal } from "lucide-react";
+import { Plus, SlidersHorizontal, Star } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 
+// mock data
 const mockCases = Array.from({ length: 12 }).map((_, i) => ({
   id: `T25071100012${34 + i}`,
   title: `คดีตัวอย่าง ${i + 1}`,
@@ -30,8 +31,34 @@ const mockCases = Array.from({ length: 12 }).map((_, i) => ({
   damage: `${(1.2 + i * 0.1).toFixed(1)},000,000`,
   date: `11/0${(2 + (i % 6)).toString()}/68`,
   summary: `รายละเอียดของคดีตัวอย่างหมายเลข ${34 + i} ผู้เสียหายจำนวนมากตกเป็นเหยื่อการโจรกรรมข้อมูลและความเสียหายจำนวนมาก...`,
-  rating: 3 + (i % 3),
+  rating: parseFloat((Math.random() * 4 + 1).toFixed(1)), // 1.0 - 5.0
 }));
+
+// ครึ่งดาว SVG
+function HalfStar() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      stroke="currentColor"
+      className="w-5 h-5"
+    >
+      <defs>
+        <linearGradient id="halfGrad">
+          <stop offset="50%" stopColor="currentColor" />
+          <stop offset="50%" stopColor="transparent" stopOpacity={1} />
+        </linearGradient>
+      </defs>
+      <path
+        fill="url(#halfGrad)"
+        stroke="currentColor"
+        strokeWidth="1"
+        d="M12 .587l3.668 7.568L24 9.423l-6 5.845 1.417 8.25L12 19.771l-7.417 3.747L6 15.268 0 9.423l8.332-1.268z"
+      />
+    </svg>
+  );
+}
 
 export default function CaseListPage() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -191,29 +218,40 @@ export default function CaseListPage() {
                 {item.summary}
               </p>
               <div className="flex gap-1 items-center">
-                <p className="text-yellow-700 font-semibold">{item.rating.toFixed(1)}</p>
-                <div className="text-yellow-500 text-lg">
-                  {"⭐".repeat(Math.round(item.rating))}
+                <p className="text-yellow-700 font-semibold">
+                  {item.rating.toFixed(1)}
+                </p>
+                <div className="flex text-yellow-500 text-lg">
+                  {(() => {
+                    const fullStars = Math.floor(item.rating);
+                    const hasHalfStar =
+                      item.rating % 1 >= 0.25 && item.rating % 1 < 0.75;
+                    const emptyStars =
+                      5 - fullStars - (hasHalfStar ? 1 : 0);
+
+                    return (
+                      <>
+                        {/* ดาวเต็ม */}
+                        {Array.from({ length: fullStars }).map((_, i) => (
+                          <Star key={`full-${i}`} fill="currentColor" stroke="none" />
+                        ))}
+
+                        {/* ครึ่งดาว */}
+                        {hasHalfStar && <HalfStar />}
+
+                        {/* ดาวว่าง */}
+                        {Array.from({ length: emptyStars }).map((_, i) => (
+                          <Star key={`empty-${i}`} stroke="currentColor" fill="none" />
+                        ))}
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             </CardContent>
           </Card>
         ))}
       </div>
-
-      <div className="flex justify-center items-center gap-2 pt-6">
-        {[1, 2, 3, 4, 5].map((page) => (
-          <Button
-            key={page}
-            size="icon"
-            className={`rounded-full w-9 h-9 ${
-              page === 1 ? "bg-blue-900 text-white" : "bg-white text-black"
-            }`}
-          >
-            {page}
-          </Button>
-        ))}
-      </div>
     </div>
   );
-}
+}//
