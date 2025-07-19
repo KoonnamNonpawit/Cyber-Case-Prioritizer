@@ -43,7 +43,7 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center bg-white min-h-screen">
+    <div className="flex-1 flex flex-col items-center justify-start bg-white min-h-screen mt-50">
       <Card className="w-full max-w-lg p-6 bg-gray-200 shadow-md rounded-lg">
         <CardHeader>
           <CardTitle className="text-blue-900 text-xl font-bold">

@@ -1,4 +1,3 @@
-# database.py
 import sqlite3
 
 def init_db():
@@ -57,8 +56,8 @@ def init_db():
             FOREIGN KEY (complainant_id) REFERENCES complainants(id)
         )
     ''')
-    
-    # 4. ตารางสำหรับเชื่อม "คดี" กับ "เจ้าหน้าที่" (Many-to-Many)
+
+    # 4. ตารางเชื่อมคดี-เจ้าหน้าที่ (Many-to-Many)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS case_officers (
             case_id TEXT NOT NULL,
@@ -68,7 +67,8 @@ def init_db():
             FOREIGN KEY (officer_id) REFERENCES officers(id) ON DELETE CASCADE
         )
     ''')
-    # 5. ตารางไฟล์หลักฐาน (Evidence Files)
+
+    # 5. ตารางไฟล์หลักฐาน
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS evidence_files (
             id TEXT PRIMARY KEY,
@@ -76,14 +76,33 @@ def init_db():
             original_filename TEXT NOT NULL,
             stored_filename TEXT NOT NULL UNIQUE,
             file_path TEXT NOT NULL,
-            upload_timestamp TEXT NOT NULL,
+            upload_timestamp TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE CASCADE
         )
     ''')
-    #6.ทำงานกับหน่วยงานอื่นๆ
+
+    # 6. ตารางผู้ต้องสงสัย (ใหม่)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS suspects (
+            id TEXT PRIMARY KEY,
+            case_id TEXT NOT NULL,
+            first_name TEXT NOT NULL,
+            last_name TEXT NOT NULL,
+            national_id TEXT,
+            bank_account TEXT,
+            phone_number TEXT,
+            email TEXT,
+            address TEXT,
+            district TEXT,
+            subdistrict TEXT,
+            province TEXT,
+            FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE CASCADE
+        )
+    ''')
+
     conn.commit()
     conn.close()
-    print("Database with new schema initialized successfully.")
+    print("Database schema initialized successfully.")
 
 if __name__ == '__main__':
     init_db()
