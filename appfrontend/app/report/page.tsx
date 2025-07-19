@@ -111,9 +111,9 @@ export default function ReportCasePage() {
     setFormData((prev) => ({ ...prev, [id]: value }));
   };
 
-  const handleSelectChange = (field: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-  };
+  // const handleSelectChange = (field: string, value: string) => {
+  //   setFormData((prev) => ({ ...prev, [field]: value }));
+  // };
 
   const handleOfficerChange = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
     const { id, value } = e.target;
