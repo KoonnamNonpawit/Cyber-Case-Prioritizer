@@ -18,16 +18,19 @@ import {
   Cell,
   Pie,
   Legend,
+  LabelList,
 } from "recharts";
 import Link from "next/link";
 import { Star } from "lucide-react";
-import { mockCases } from "@/app/mockCases";  // ใช้ mockCases
+import { mockCases } from "@/app/mockCases";
 
+// ฟังก์ชันคำนวณดาวสำหรับคะแนนความสำคัญ
 function getStarRating(score: number): number {
   if (score <= 0) return 0;
   return Math.round((score / 20) * 2) / 2;
 }
 
+// แสดงดาวความสำคัญ
 function StarRating({ rating }: { rating: number }) {
   const fullStars = Math.floor(rating);
   const hasHalfStar = rating % 1 !== 0;
@@ -51,17 +54,77 @@ function StarRating({ rating }: { rating: number }) {
   );
 }
 
+// สร้างข้อมูลคดีใน 7 วันที่ผ่านมา (mock)
 function fillWeeklyData() {
   const today = new Date();
   return Array.from({ length: 7 }).map((_, i) => {
     const d = new Date(today);
     d.setDate(today.getDate() - (6 - i));
     const label = d.toLocaleDateString("th-TH", { weekday: "short" });
-    return { day: label, value: Math.floor(Math.random() * 10) + 1 };
+    return { day: label, value: Math.floor(Math.random() * 100) + 1 };
   });
 }
 
-const chartColors = ["#632D9C", "#BC298C", "#F24B72", "#F9F871", "#FF7F6A", "#FFBA5B"];
+// กราฟ 7 วันล่าสุด (แท่งเปลี่ยนสีเหลืองเมื่อ hover)
+function WeeklyCasesChart({ data }: { data: { day: string; value: number }[] }) {
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+
+  return (
+    <ResponsiveContainer width="100%" height={200}>
+      <BarChart data={data}>
+        <XAxis dataKey="day" />
+        <YAxis hide />
+        <Tooltip cursor={{ fill: "transparent" }} />
+
+        <Bar
+          dataKey="value"
+          radius={[20, 20, 0, 0]}
+          onMouseLeave={() => setActiveIndex(null)}
+        >
+          {data.map((_, index) => (
+            <Cell
+              key={`cell-${index}`}
+              fill={activeIndex === index ? "#EBD728" : "#D9D9D9"} // เปลี่ยนสีเหลืองเมื่อ hover
+              onMouseEnter={() => setActiveIndex(index)}
+            />
+          ))}
+
+          {/* แสดงค่าบนแท่งเฉพาะเมื่อ hover */}
+          <LabelList
+            dataKey="value"
+            position="top"
+            formatter={(value: number, entry, index) =>
+              index === activeIndex ? value : ""
+            }
+            style={{ fontWeight: "bold", fill: "#000", fontSize: 14 }}
+          />
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+// สร้างข้อมูลสถิติรายเดือน (mock)
+function generateMonthlyStats(months = 6) {
+  const today = new Date();
+  const stats = [];
+  for (let i = 0; i < months; i++) {
+    const d = new Date(today);
+    d.setMonth(today.getMonth() - i);
+    const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    stats.unshift({
+      month: monthKey,
+      Hacking: Math.floor(Math.random() * 20) + 1,
+      Scam: Math.floor(Math.random() * 30) + 1,
+      Phishing: Math.floor(Math.random() * 15),
+      "Illegal Content": Math.floor(Math.random() * 10),
+      Other: Math.floor(Math.random() * 5),
+    });
+  }
+  return stats;
+}
+
+const chartColors = ["#632D9C", "#BC298C", "#F24B72", "#F3E01C", "#FF7F6A", "#FFBA5B"];
 
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
@@ -100,6 +163,7 @@ export default function DashboardPage() {
     .slice(0, 5);
 
   const weeklyData = fillWeeklyData();
+  const monthlyData = generateMonthlyStats(6);
 
   useEffect(() => {
     const timer = setTimeout(() => setLoading(false), 500);
@@ -110,10 +174,10 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen space-y-10 pb-10">
-      {/* Summary */}
       <div className="max-w-7xl mx-auto p-4 space-y-6 bg-[#ECEBF2] rounded-xl">
         <h1 className="text-3xl font-bold text-blue-900">Dashboard</h1>
 
+        {/* การ์ดสรุปสถิติ */}
         <div className="grid grid-cols-4 gap-4">
           {[
             { title: "จำนวนคดีทั้งหมด", value: total_cases },
@@ -130,7 +194,7 @@ export default function DashboardPage() {
           ))}
         </div>
 
-        {/* Charts */}
+        {/* กราฟประเภทคดีและรายเดือน */}
         <div className="grid grid-cols-3 gap-4">
           <Card className="col-span-1 bg-white">
             <CardHeader><CardTitle>สถิติประเภทคดี</CardTitle></CardHeader>
@@ -146,35 +210,31 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
           <Card className="col-span-2 bg-white">
-            <CardHeader><CardTitle>สถิติคดีรายเดือน (mock)</CardTitle></CardHeader>
+            <CardHeader><CardTitle>สถิติคดีรายเดือน</CardTitle></CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={[{ month: "2025-07", Hacking: 5, Scam: 8 }]}>
+                <BarChart data={monthlyData}>
                   <XAxis dataKey="month" />
                   <YAxis />
                   <Tooltip />
                   <Legend />
                   <Bar dataKey="Hacking" stackId="a" fill={chartColors[0]} />
                   <Bar dataKey="Scam" stackId="a" fill={chartColors[1]} />
+                  <Bar dataKey="Phishing" stackId="a" fill={chartColors[2]} />
+                  <Bar dataKey="Illegal Content" stackId="a" fill={chartColors[3]} />
+                  <Bar dataKey="Other" stackId="a" fill={chartColors[4]} />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
           </Card>
         </div>
 
-        {/* Weekly */}
+        {/* กราฟ 7 วันล่าสุด */}
         <div className="grid grid-cols-3 gap-4">
           <Card className="col-span-2 bg-white">
-            <CardHeader><CardTitle>จำนวนคดี 7 วันล่าสุด (mock)</CardTitle></CardHeader>
+            <CardHeader><CardTitle>จำนวนคดี 7 วันล่าสุด</CardTitle></CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={weeklyData}>
-                  <XAxis dataKey="day" />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="value" fill="#D9D9D9" />
-                </BarChart>
-              </ResponsiveContainer>
+              <WeeklyCasesChart data={weeklyData} />
             </CardContent>
           </Card>
           <Card className="col-span-1 p-4 bg-gradient-to-r from-blue-800 to-blue-400 text-white flex flex-col items-center justify-center">
@@ -237,8 +297,6 @@ export default function DashboardPage() {
                   </div>
                 </div>
               )}
-
-              {/* อันดับ 2–5 */}
               <div className="flex flex-wrap justify-center gap-4">
                 {topAccounts.slice(1).map((acc, idx) => {
                   const colors = ["#273880", "#515AA7", "#797ED0", "#A2A5FA"];
