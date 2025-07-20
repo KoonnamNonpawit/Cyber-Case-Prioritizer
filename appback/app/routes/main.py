@@ -24,9 +24,7 @@ def get_db_conn():
     return conn
 
 def update_case_links(case_id):
-    """
-    ตรวจสอบคดีอื่น ๆ ว่ามีความคล้ายกับคดีนี้หรือไม่ และเสนอการจัดกลุ่ม
-    """
+    
     conn = get_db_conn()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
 
@@ -45,7 +43,7 @@ def update_case_links(case_id):
 
     for group in existing_groups:
         # ตัวอย่าง: หาเคสในกลุ่มนี้ เพื่อเปรียบเทียบ
-        cursor.execute("SELECT * FROM cases WHERE group_id = %s", (group['group_number'],))
+        cursor.execute("SELECT * FROM cases WHERE group_number = %s", (group['group_number'],))
         group_cases = cursor.fetchall()
 
         if not group_cases:
@@ -354,7 +352,32 @@ def rank_case():
         
         conn = get_db_conn()
         cursor = conn.cursor()
+
+        case_id = str(uuid.uuid4())
+        case_number = case_details.get('case_number')
+        current_time = datetime.datetime.now()
+        sensitive_data_compromised = bool(case_details_filled.get('sensitive_data_compromised', 0))
+        ongoing_threat = bool(case_details_filled.get('ongoing_threat', 0))
+        risk_of_evidence_loss = bool(case_details_filled.get('risk_of_evidence_loss', 0))
         
+        complainant_id = str(uuid.uuid4())
+
+        cursor.execute("""
+            INSERT INTO complainants (
+                id, first_name, last_name, phone_number, email, address, province, district, subdistrict, zipcode
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+            complainant_id,
+            complainant_data.get('first_name'),
+            complainant_data.get('last_name'),
+            complainant_data.get('phone_number'),
+            complainant_data.get('email'),
+            complainant_data.get('address'),
+            complainant_data.get('province'),
+            complainant_data.get('district'),
+            complainant_data.get('subdistrict'),
+            complainant_data.get('zipcode')
+        ))
         # Insert case
         cursor.execute("""
             INSERT INTO cases (
@@ -388,7 +411,6 @@ def rank_case():
             None,      # group_id (ถ้าไม่มี ให้ใส่ None)
             None       # suspests (ถ้าไม่มี ให้ใส่ None)
         ))
-        conn.commit()  # <=== ต้อง commit ตรงนี้ก่อน
 
         # Insert officers (ถ้ามี)
         for officer in officers_data:
@@ -435,9 +457,7 @@ def rank_case():
             """, (
                 evidence_id, case_number, ev.get('evidence_type'), ev.get('evidence_value'), current_time
             ))
-
-
-
+ 
         conn.commit()
         linking_service.update_case_links(case_id)
         conn.close()
