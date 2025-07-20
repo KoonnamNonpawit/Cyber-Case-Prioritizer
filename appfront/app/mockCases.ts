@@ -68,7 +68,7 @@ export const mockCases: Case[] = Array.from({ length: 200 }, (_, i) => {
     estimated_financial_damage: ((i * 3571) % 9500000) + 50000,
     timestamp: baseDate.toISOString(),
     description: `รายละเอียดคดีประเภท ${pick(caseTypes, i)} (ID: ${i + 1}) สำหรับการทดสอบ`,
-    priority_score: (i * 13) % 100 + 1,
+    priority_score: (i * 13) % 100 + 8,
     status: pick(statuses, i),
     case_type: pick(caseTypes, i * 2),
     account_number: generateAccount(i),
