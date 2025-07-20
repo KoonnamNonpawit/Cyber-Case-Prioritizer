@@ -1,3 +1,4 @@
+# app/routes/main.py
 from flask import Blueprint, request, jsonify, current_app, send_from_directory
 from collections import defaultdict
 from werkzeug.utils import secure_filename
@@ -9,20 +10,9 @@ import datetime
 import math
 import os
 from app.services import ml_service
-from app.db import get_db_conn  # ใช้ตัวนี้แทน
+from app.db import get_db_conn
 
-# ใช้ชื่อเดียว
 main_bp = Blueprint('main', __name__)
-
-
-# --- Helper Function to get DB connection ---
-def get_db_conn():
-    db_url = os.environ.get('DATABASE_URL', 'postgresql://postgres.hpqegncuwpiegerakwan:cyberwarrior29!@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres') # Fallback for local dev
-    print(db_url)
-    if not db_url:
-        raise Exception("DATABASE_URL environment variable is not set. Please create a .env file.")
-    conn = psycopg2.connect(db_url)
-    return conn
 
 # --- Dashboard Stats API ---
 @main_bp.route('/dashboard', methods=['GET'])
@@ -77,9 +67,8 @@ def get_dashboard_stats():
         monthly_breakdown = defaultdict(dict)
         for row in monthly_breakdown_rows:
             monthly_breakdown[row['month']][row['case_type']] = row['count']
-<<<<<<< HEAD
 
-        # 7. Top 5 คดีสำคัญ (priority_score สูงสุด)
+        # 7. Top 5 คดีสำคัญ
         cursor.execute("""
             SELECT id, case_number, case_name, description, timestamp,
                    num_victims, estimated_financial_damage, priority_score
@@ -89,7 +78,7 @@ def get_dashboard_stats():
         """)
         top_5_cases = cursor.fetchall()
 
-        # 8. Top 5 บัญชีธนาคารที่พบบ่อยที่สุด (สมมติว่า table = bank_accounts)
+        # 8. Top 5 บัญชีธนาคารที่พบบ่อยที่สุด (ถ้ามีตาราง bank_accounts)
         cursor.execute("""
             SELECT account_number, COUNT(*) as case_count
             FROM bank_accounts
@@ -98,27 +87,10 @@ def get_dashboard_stats():
             LIMIT 5
         """)
         top_5_accounts = cursor.fetchall()
-=======
-        
-        cursor.execute("SELECT id, case_number, case_name, priority_score FROM cases ORDER BY priority_score DESC LIMIT 5")
-        top_5_cases = cursor.fetchall()
-
-        cursor.execute("""
-            SELECT suspects.account, COUNT(DISTINCT suspects.case_number) AS num_cases
-            FROM suspects 
-            JOIN cases ON suspects.case_number = cases.case_number
-            WHERE cases.group_id IS NOT NULL
-            GROUP BY suspects.account
-            ORDER BY num_cases DESC
-            LIMIT 5
-        """)
-        top_accounts_from_suspects = cursor.fetchall()
->>>>>>> 88acc609dc55e417e3765feb3a0421d389b1668e
 
         cursor.close()
         conn.close()
 
-        # --- รวบรวมข้อมูลทั้งหมดเพื่อส่งกลับ ---
         response_data = {
             "summary_stats": {
                 "total_cases": total_cases,
@@ -131,21 +103,14 @@ def get_dashboard_stats():
             "cases_by_type": cases_by_type,
             "monthly_case_breakdown": monthly_breakdown,
             "top_5_priority_cases": top_5_cases,
-<<<<<<< HEAD
             "top_5_accounts": top_5_accounts
-=======
-            "top_accounts_from_suspects": top_accounts_from_suspects
->>>>>>> 88acc609dc55e417e3765feb3a0421d389b1668e
         }
-
         return jsonify(response_data), 200
 
     except Exception as e:
         current_app.logger.error(f"Failed to get dashboard stats: {e}")
         return jsonify({"error": "Failed to retrieve dashboard stats."}), 500
 
-
-# --- GET ALL CASES (with Full Filtering & Pagination) ---
 @main_bp.route('/cases', methods=['GET'])
 def get_all_cases():
     page = request.args.get('page', default=1, type=int)
