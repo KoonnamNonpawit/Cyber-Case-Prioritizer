@@ -20,7 +20,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-// ใช้ mockCases กลางแทนสร้างเอง
 import { mockCases, Case } from "@/app/mockCases";
 
 interface Pagination {
@@ -44,7 +43,7 @@ export default function CaseListPage() {
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
 
-  // ฟังก์ชันจำลองการดึงข้อมูล (ใช้ mockCases)
+  // ฟังก์ชันดึงข้อมูลจาก mockCases
   const fetchCases = (page = 1, currentFilters = filters, currentSearch = searchTerm) => {
     setLoading(true);
     setError(null);
@@ -52,7 +51,7 @@ export default function CaseListPage() {
     try {
       let data = [...mockCases];
 
-      // กรอง search
+      // ค้นหา
       if (currentSearch) {
         data = data.filter(
           (c) =>
@@ -61,7 +60,7 @@ export default function CaseListPage() {
         );
       }
 
-      // กรอง filters
+      // ตัวกรอง
       if (currentFilters.case_type) {
         data = data.filter((c) => c.case_type === currentFilters.case_type);
       }
@@ -213,51 +212,55 @@ export default function CaseListPage() {
         {cases.map((item) => (
           <Card
             key={item.id}
-            className="bg-[#ECEBF2] p-4 space-y-2 rounded-xl relative"
+            className="bg-[#ECEBF2] p-4 space-y-2 rounded-xl relative hover:ring-2 hover:ring-blue-400 transition"
           >
-            {/* ถ้ามี groupId แสดงปุ่มไปหน้ากลุ่ม */}
+            {/* ปุ่มกลุ่ม (ยังคงทำงาน) */}
             {item.groupId && (
               <Link href={`/groups/${item.groupId}`} title="ดูคดีในกลุ่มเดียวกัน">
                 <Layers className="absolute top-3 right-3 w-5 h-5 text-gray-600 hover:text-blue-700 cursor-pointer" />
               </Link>
             )}
-            <CardContent className="space-y-2">
-              <p className="font-bold text-sm text-gray-700">{item.case_number}</p>
-              <p className="text-xl font-bold">{item.case_name}</p>
-              <div className="flex justify-between text-sm text-red-700 font-semibold">
-                <p>👥 {item.num_victims ?? 0}</p>
-                <p>฿ {item.estimated_financial_damage.toLocaleString()}</p>
-                <p>📅 {new Date(item.timestamp).toLocaleDateString("th-TH")}</p>
-              </div>
-              <p className="text-sm text-gray-800 line-clamp-4">
-                {item.description || "ไม่มีรายละเอียด"}
-              </p>
-              <div className="flex gap-1 items-center">
-                {(() => {
-                  const rawScore = item.priority_score || 0;
-                  const starScore = Math.min(5, (rawScore / 100) * 5);
-                  const fullStars = Math.floor(starScore);
-                  const hasHalf = starScore - fullStars >= 0.25 && starScore - fullStars < 0.75;
-                  const emptyStars = 5 - fullStars - (hasHalf ? 1 : 0);
-                  return (
-                    <>
-                      <p className="text-yellow-700 font-semibold">
-                        {starScore.toFixed(1)} / 5
-                      </p>
-                      <div className="flex text-yellow-500 ml-2">
-                        {[...Array(fullStars)].map((_, i) => (
-                          <Star key={`full-${i}`} className="w-4 h-4 fill-yellow-500" />
-                        ))}
-                        {hasHalf && <StarHalf className="w-4 h-4 fill-yellow-500" />}
-                        {[...Array(emptyStars)].map((_, i) => (
-                          <StarOff key={`empty-${i}`} className="w-4 h-4 text-gray-400" />
-                        ))}
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
-            </CardContent>
+
+            {/* คลิกการ์ดไปหน้ารายละเอียดคดี */}
+            <Link href={`/cases/${item.case_number}`}>
+              <CardContent className="space-y-2 cursor-pointer">
+                <p className="font-bold text-sm text-gray-700">{item.case_number}</p>
+                <p className="text-xl font-bold">{item.case_name}</p>
+                <div className="flex justify-between text-sm text-red-700 font-semibold">
+                  <p>👥 {item.num_victims ?? 0}</p>
+                  <p>฿ {item.estimated_financial_damage.toLocaleString()}</p>
+                  <p>📅 {new Date(item.timestamp).toLocaleDateString("th-TH")}</p>
+                </div>
+                <p className="text-sm text-gray-800 line-clamp-4">
+                  {item.description || "ไม่มีรายละเอียด"}
+                </p>
+                <div className="flex gap-1 items-center">
+                  {(() => {
+                    const rawScore = item.priority_score || 0;
+                    const starScore = Math.min(5, (rawScore / 100) * 5);
+                    const fullStars = Math.floor(starScore);
+                    const hasHalf = starScore - fullStars >= 0.25 && starScore - fullStars < 0.75;
+                    const emptyStars = 5 - fullStars - (hasHalf ? 1 : 0);
+                    return (
+                      <>
+                        <p className="text-yellow-700 font-semibold">
+                          {starScore.toFixed(1)} / 5
+                        </p>
+                        <div className="flex text-yellow-500 ml-2">
+                          {[...Array(fullStars)].map((_, i) => (
+                            <Star key={`full-${i}`} className="w-4 h-4 fill-yellow-500" />
+                          ))}
+                          {hasHalf && <StarHalf className="w-4 h-4 fill-yellow-500" />}
+                          {[...Array(emptyStars)].map((_, i) => (
+                            <StarOff key={`empty-${i}`} className="w-4 h-4 text-gray-400" />
+                          ))}
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              </CardContent>
+            </Link>
           </Card>
         ))}
       </div>

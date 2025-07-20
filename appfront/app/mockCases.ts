@@ -1,6 +1,6 @@
 // app/mockCases.ts
 export interface Case {
-  id: string;
+  id: string;  // ใช้เป็นหมายเลขคดีโดยตรง
   case_number: string;
   case_name: string;
   num_victims: number;
@@ -14,49 +14,64 @@ export interface Case {
   groupId?: string;
 }
 
-// Group IDs
+// Group IDs สำหรับบางคดี
 const groupIds = [undefined, "G020250119", "G020250120", "G020250121"];
 
-// ฟังก์ชันสุ่มเลขบัญชี (บางอันซ้ำบ่อย)
-const frequentAccounts = [
-  "123-4-56789-0",
-  "222-5-55555-1",
-  "333-6-44444-2",
-  "444-7-12345-3",
-  "555-8-88888-4",
+// สถานะคดีและประเภทคดี
+const statuses = ["รับเรื่อง", "กำลังสืบสวน", "ปิดคดี"];
+const caseTypes = ["Hacking", "Scam", "Phishing", "Illegal Content", "Other"];
+
+// Top 5 บัญชีที่เจอบ่อย (ใช้สำหรับ Dashboard)
+const topAccounts = [
+  { acc: "123-4-56789-0", count: 40 },
+  { acc: "222-5-55555-1", count: 30 },
+  { acc: "333-6-44444-2", count: 20 },
+  { acc: "444-7-12345-3", count: 10 },
+  { acc: "555-8-88888-4", count: 5 },
 ];
-function randomAccountNumber(): string {
-  // 30% โอกาสใช้บัญชีที่ซ้ำ เพื่อให้เจอ top 5
-  if (Math.random() < 0.3) {
-    return frequentAccounts[Math.floor(Math.random() * frequentAccounts.length)];
+
+// เตรียม list บัญชีสำหรับ Top 5 ตาม count
+const weightedAccounts: string[] = [];
+topAccounts.forEach(({ acc, count }) => {
+  for (let i = 0; i < count; i++) {
+    weightedAccounts.push(acc);
   }
-  const part1 = Math.floor(100 + Math.random() * 900);
-  const part2 = Math.floor(10 + Math.random() * 90);
-  const part3 = Math.floor(10000 + Math.random() * 90000);
-  const part4 = Math.floor(Math.random() * 10);
-  return `${part1}-${part2}-${part3}-${part4}`;
+});
+
+// ฟังก์ชันสร้างเลขบัญชี
+function generateAccount(index: number): string {
+  if (index < weightedAccounts.length) {
+    return weightedAccounts[index];
+  }
+  const p1 = String(600 + (index * 7) % 300);
+  const p2 = String(10 + (index * 5) % 90);
+  const p3 = String(10000 + (index * 13) % 90000);
+  const p4 = String(index % 10);
+  return `${p1}-${p2}-${p3}-${p4}`;
 }
 
-// สร้าง mock 200 คดี
-export const mockCases: Case[] = Array.from({ length: 200 }, (_, i) => ({
-  id: `${i + 1}`,
-  case_number: `T2507${String(11000 + i).padStart(5, "0")}`,
-  case_name: `คดีทดสอบ ${i + 1}`,
-  num_victims: Math.floor(Math.random() * 500), // ผู้เสียหายสุ่ม
-  estimated_financial_damage: Math.floor(Math.random() * 10000000) + 50000,
-  timestamp: new Date(
-    2025,
-    Math.floor(Math.random() * 12),
-    Math.floor(Math.random() * 28) + 1
-  ).toISOString(),
-  description: "รายละเอียดคดี (mock) สำหรับการทดสอบ",
-  priority_score: Math.floor(Math.random() * 100),
-  status: ["รับเรื่อง", "กำลังสืบสวน", "ปิดคดี"][
-    Math.floor(Math.random() * 3)
-  ],
-  case_type: ["Hacking", "Scam", "Phishing", "Illegal Content", "Other"][
-    Math.floor(Math.random() * 5)
-  ],
-  account_number: randomAccountNumber(),
-  groupId: groupIds[Math.floor(Math.random() * groupIds.length)],
-}));
+// Helper เลือกค่าจาก array แบบวน
+function pick<T>(arr: T[], index: number): T {
+  return arr[index % arr.length];
+}
+
+// สร้าง mock dataset 200 เคส
+export const mockCases: Case[] = Array.from({ length: 200 }, (_, i) => {
+  const baseDate = new Date(2025, i % 12, (i * 3) % 28 + 1);
+  const caseNum = `T2507${String(11000 + i).padStart(5, "0")}`; // หมายเลขคดี
+
+  return {
+    id: caseNum,  // ใช้หมายเลขคดีเป็น id
+    case_number: caseNum,
+    case_name: `คดีประเภท ${pick(caseTypes, i)} ลำดับ ${i + 1}`,
+    num_victims: (i * 17) % 500 + 5,
+    estimated_financial_damage: ((i * 3571) % 9500000) + 50000,
+    timestamp: baseDate.toISOString(),
+    description: `รายละเอียดคดีประเภท ${pick(caseTypes, i)} (ID: ${i + 1}) สำหรับการทดสอบ`,
+    priority_score: (i * 13) % 100,
+    status: pick(statuses, i),
+    case_type: pick(caseTypes, i * 2),
+    account_number: generateAccount(i),
+    groupId: pick(groupIds, i),
+  };
+});
