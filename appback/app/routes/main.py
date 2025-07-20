@@ -400,8 +400,8 @@ def rank_case():
         current_app.logger.error(f"Traceback: {traceback.format_exc()}")
         return jsonify({"error": "Failed to create case due to a server error."}), 500
     
-@main_bp.route('/group_cases/<string:group_case>', methods=['GET'])
-def get_all_group_cases(group_case):
+@main_bp.route('/group_cases/<string:group_number>', methods=['GET'])
+def get_all_group_cases(group_number):
     page = request.args.get('page', default=1, type=int)
     limit = 12
     offset = (page - 1) * limit
@@ -415,7 +415,7 @@ def get_all_group_cases(group_case):
             SELECT * FROM cases 
             WHERE group_id = %s
         """
-        params = [group_case]
+        params = [group_number]
 
         if search_term:
             # ใช้ ILIKE และ wildcard % สำหรับค้นหาแบบใกล้เคียง case_name และ case_number
@@ -439,7 +439,7 @@ def get_all_group_cases(group_case):
         }), 200
 
     except Exception as e:
-        current_app.logger.error(f"Failed to get group cases {group_case}: {e}")
+        current_app.logger.error(f"Failed to get group number {group_number}: {e}")
         return jsonify({"error": "Failed to retrieve case details."}), 500
 
 @main_bp.route('/cases/<string:case_number>', methods=['GET'])
@@ -475,15 +475,50 @@ def get_case_by_number(case_number):
     except Exception as e:
         current_app.logger.error(f"Failed to get case {case_number}: {e}")
         return jsonify({"error": "Failed to retrieve case details."}), 500
-    
-@main_bp.route('/cases/<string:case_id>', methods=['PUT'])
-def update_case(case_id):
+
+@main_bp.route('/suggestion_group_case/<string:group_number>', methods=['GET'])
+@main_bp.route('/suggestion_group_case/<string:group_number>', methods=['GET'])
+def get_suggested_cases_by_group(group_number):
+    try:
+        conn = get_db_conn()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        cursor.execute("SELECT id FROM case_groups WHERE group_number = %s", (group_number,))
+        group = cursor.fetchone()
+
+        if not group:
+            return jsonify({"error": "Group not found"}), 404
+
+        group_id = group['id']
+
+        # ดึงคดีที่ ML แนะนำให้เข้า group นี้
+        cursor.execute("""
+            SELECT s.id AS suggestion_id, c.case_number, c.case_name, c.priority_score, s.ml_score, s.status
+            FROM case_group_suggestions s
+            JOIN cases c ON s.case_id = c.id
+            WHERE s.suggested_group_id = %s AND s.status = 'pending'
+            ORDER BY s.ml_score DESC
+        """, (group_id,))
+
+        suggestions = cursor.fetchall()
+
+        conn.close()
+        return jsonify(suggestions), 200
+
+    except Exception as e:
+        current_app.logger.error(f"Failed to load suggestions: {e}")
+        return jsonify({"error": "Failed to retrieve suggestions."}), 500
+
+
+@main_bp.route('/cases/<string:case_number>', methods=['PUT'])
+def update_case(case_number):
     ml_model_pipeline = current_app.config['ML_PIPELINE']
     data = request.get_json()
     case_details = data.get('case_details', {})
-    officers_data = data.get('officers', []) # Get updated officer list
+    officers_data = data.get('officers', [])
     
     try:
+        # เตรียมข้อมูลสำหรับโมเดล
         input_df = pd.DataFrame([case_details])[ml_service.TEXT_FEATURES + ml_service.BINARY_FEATURES + ml_service.NUMERICAL_FEATURES + ml_service.TARGET_COLUMN]
         priority_score = ml_model_pipeline.predict(input_df)[0]
         priority_score = max(0, min(100, priority_score))
@@ -493,39 +528,49 @@ def update_case(case_id):
 
         current_time = datetime.datetime.now().isoformat()
         date_closed = None
+
+        # ดึง date_closed ของ case เดิม (ใช้ %s แทน ?)
+        cursor.execute("SELECT date_closed FROM cases WHERE case_number = %s", (case_number,))
+        old_case = cursor.fetchone()
         if case_details.get('status') == 'ปิดคดี':
-            old_case = cursor.execute("SELECT date_closed FROM cases WHERE id = ?", (case_id,)).fetchone()
-            if not (old_case and old_case['date_closed']):
+            if not (old_case and old_case[0]):
                 date_closed = current_time
 
         update_fields = {
-            'last_updated': current_time, 'priority_score': float(priority_score),
-            'case_number': case_details.get('case_number'), 'case_name': case_details.get('case_name'),
-            'status': case_details.get('status'), 'description': case_details.get('description'),
+            'last_updated': current_time,
+            'priority_score': float(priority_score),
+            'case_number': case_details.get('case_number'),
+            'case_name': case_details.get('case_name'),
+            'status': case_details.get('status'),
+            'description': case_details.get('description'),
             'case_type': case_details.get('case_type')
         }
         if date_closed:
             update_fields['date_closed'] = date_closed
         
         update_fields = {k: v for k, v in update_fields.items() if v is not None}
-        
+
         if update_fields:
-            set_clause = ", ".join([f"{key} = ?" for key in update_fields.keys()])
-            params = list(update_fields.values()) + [case_id]
-            cursor.execute(f"UPDATE cases SET {set_clause} WHERE id = ?", tuple(params))
+            set_clause = ", ".join([f"{key} = %s" for key in update_fields.keys()])
+            params = list(update_fields.values()) + [case_number]
+            cursor.execute(f"UPDATE cases SET {set_clause} WHERE case_number = %s", tuple(params))
 
         # Update assigned officers: delete old ones, add new ones
-        cursor.execute("DELETE FROM case_officers WHERE case_id = ?", (case_id,))
+        cursor.execute("DELETE FROM case_officers WHERE case_id = (SELECT id FROM cases WHERE case_number = %s)", (case_number,))
         for officer in officers_data:
             officer_id = officer.get('id')
-            if officer_id: # Only link existing officers during an update
-                cursor.execute("INSERT INTO case_officers (case_id, officer_id) VALUES (?, ?)", (case_id, officer_id))
+            if officer_id:
+                cursor.execute(
+                    "INSERT INTO case_officers (case_id, officer_id) VALUES ((SELECT id FROM cases WHERE case_number = %s), %s)", 
+                    (case_number, officer_id)
+                )
 
         conn.commit()
         conn.close()
-        return jsonify({"message": f"Case {case_id} updated successfully."}), 200
+        return jsonify({"message": f"Case {case_number} updated successfully."}), 200
+
     except Exception as e:
-        current_app.logger.error(f"Failed to update case {case_id}: {e}")
+        current_app.logger.error(f"Failed to update case {case_number}: {e}")
         return jsonify({"error": "Failed to update case."}), 500
 
 @main_bp.route('/cases/<string:case_id>', methods=['DELETE'])
