@@ -77,6 +77,7 @@ def get_dashboard_stats():
         monthly_breakdown = defaultdict(dict)
         for row in monthly_breakdown_rows:
             monthly_breakdown[row['month']][row['case_type']] = row['count']
+<<<<<<< HEAD
 
         # 7. Top 5 คดีสำคัญ (priority_score สูงสุด)
         cursor.execute("""
@@ -97,6 +98,22 @@ def get_dashboard_stats():
             LIMIT 5
         """)
         top_5_accounts = cursor.fetchall()
+=======
+        
+        cursor.execute("SELECT id, case_number, case_name, priority_score FROM cases ORDER BY priority_score DESC LIMIT 5")
+        top_5_cases = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT suspects.account, COUNT(DISTINCT suspects.case_number) AS num_cases
+            FROM suspects 
+            JOIN cases ON suspects.case_number = cases.case_number
+            WHERE cases.group_id IS NOT NULL
+            GROUP BY suspects.account
+            ORDER BY num_cases DESC
+            LIMIT 5
+        """)
+        top_accounts_from_suspects = cursor.fetchall()
+>>>>>>> 88acc609dc55e417e3765feb3a0421d389b1668e
 
         cursor.close()
         conn.close()
@@ -114,7 +131,11 @@ def get_dashboard_stats():
             "cases_by_type": cases_by_type,
             "monthly_case_breakdown": monthly_breakdown,
             "top_5_priority_cases": top_5_cases,
+<<<<<<< HEAD
             "top_5_accounts": top_5_accounts
+=======
+            "top_accounts_from_suspects": top_accounts_from_suspects
+>>>>>>> 88acc609dc55e417e3765feb3a0421d389b1668e
         }
 
         return jsonify(response_data), 200
@@ -144,7 +165,6 @@ def get_all_cases():
     params = []
     
     search_term = request.args.get('q')
-    search_term = request.args.get('q')
     if search_term:
         where_clause += " AND (REPLACE(c.case_number, '-', '') ILIKE %s OR c.case_name ILIKE %s)"
         params.extend([f"%{search_term.replace('-', '')}%", f"%{search_term}%"])
@@ -154,6 +174,7 @@ def get_all_cases():
         'case_type': {'column': 'c.case_type', 'operator': '='},
         'reputational_damage_level': {'column': 'c.reputational_damage_level', 'operator': '='},
         'technical_complexity_level': {'column': 'c.technical_complexity_level', 'operator': '='},
+        'group_id': {'column': 'c.group_id', 'operator': 'ILIKE', 'formatter': lambda v: f"%{v}%"},
         
         # Boolean fields from 'cases' table
         'sensitive_data_compromised': {'column': 'c.sensitive_data_compromised', 'operator': '=', 'formatter': lambda v: 1 if v.lower() == 'true' else 0},
@@ -171,13 +192,9 @@ def get_all_cases():
     for arg_name, mapping in filter_map.items():
         arg_value = request.args.get(arg_name)
         if arg_value:
-            where_clause += mapping['clause']
-            
             formatted_value = mapping.get('formatter', lambda v: v)(arg_value)
-            if isinstance(formatted_value, tuple):
-                params.extend(formatted_value)
-            else:
-                params.append(formatted_value)
+            where_clause += f" AND {mapping['column']} {mapping['operator']} %s"
+            params.append(formatted_value)
 
     try:
         conn = get_db_conn()
@@ -275,6 +292,48 @@ def rank_case():
     except Exception as e:
         current_app.logger.error(f"Failed to create case: {e}")
         return jsonify({"error": "Failed to create case due to a server error."}), 500
+
+@main_bp.route('/group_cases/<string:group_case>', methods=['GET'])
+def get_all_group_cases(group_case):
+    page = request.args.get('page', default=1, type=int)
+    limit = 12
+    offset = (page - 1) * limit
+    search_term = request.args.get('q', '').strip()
+
+    try:
+        conn = get_db_conn()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        base_query = """
+            SELECT * FROM cases 
+            WHERE group_id = %s
+        """
+        params = [group_case]
+
+        if search_term:
+            # ใช้ ILIKE และ wildcard % สำหรับค้นหาแบบใกล้เคียง case_name และ case_number
+            base_query += " AND (case_name ILIKE %s OR REPLACE(case_number, '-', '') ILIKE %s)"
+            like_pattern = f"%{search_term}%"
+            params.extend([like_pattern, like_pattern])
+
+        base_query += " ORDER BY timestamp DESC LIMIT %s OFFSET %s"
+        params.extend([limit, offset])
+
+        cursor.execute(base_query, tuple(params))
+        case_data = cursor.fetchall()
+
+        cursor.close()
+        conn.close()
+
+        return jsonify({
+            "page": page,
+            "limit": limit,
+            "data": [dict(row) for row in case_data]
+        }), 200
+
+    except Exception as e:
+        current_app.logger.error(f"Failed to get group cases {group_case}: {e}")
+        return jsonify({"error": "Failed to retrieve case details."}), 500
 
 @main_bp.route('/cases/<string:case_id>', methods=['GET'])
 def get_case_by_id(case_id):
