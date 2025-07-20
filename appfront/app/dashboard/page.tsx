@@ -276,50 +276,74 @@ export default function DashboardPage() {
       </div>
 
       {/* Top 5 Accounts */}
-      <div className="max-w-7xl mx-auto px-4">
-        <Card className="bg-[#ECEBF2] shadow rounded-xl">
-          <CardHeader>
-            <CardTitle className="text-center text-xl font-bold">
-              5 บัญชีธนาคารที่พบในคดีบ่อยที่สุด
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col items-center gap-6">
-              {topAccounts[0] && (
-                <div className="flex items-center gap-4 px-8 py-4 rounded-full shadow-lg bg-white">
-                  <div className="flex items-center justify-center rounded-full text-white font-bold bg-[#1C254F]"
-                       style={{ width: "60px", height: "60px", fontSize: "1.8rem" }}>
-                    1
-                  </div>
-                  <div className="flex flex-col text-center">
-                    <span className="font-bold text-2xl">{topAccounts[0].account}</span>
-                    <span className="text-gray-600 text-base">พบใน {topAccounts[0].caseCount} คดี</span>
-                  </div>
-                </div>
-              )}
-              <div className="flex flex-wrap justify-center gap-4">
-                {topAccounts.slice(1).map((acc, idx) => {
-                  const colors = ["#273880", "#515AA7", "#797ED0", "#A2A5FA"];
-                  const rankColor = colors[idx] || "#A2A5FA";
-                  return (
-                    <div key={acc.account}
-                         className="flex items-center gap-3 px-6 py-3 rounded-full shadow bg-white">
-                      <div className="flex items-center justify-center rounded-full text-white font-bold"
-                           style={{ backgroundColor: rankColor, width: "40px", height: "40px", fontSize: "1rem" }}>
-                        {idx + 2}
-                      </div>
-                      <div className="flex flex-col text-center">
-                        <span className="font-bold text-base">{acc.account}</span>
-                        <span className="text-gray-600 text-sm">พบใน {acc.caseCount} คดี</span>
-                      </div>
-                    </div>
-                  );
-                })}
+<div className="max-w-7xl mx-auto px-4">
+  <Card className="bg-[#ECEBF2] shadow rounded-xl">
+    <CardHeader>
+      <CardTitle className="text-center text-xl font-bold">
+        5 บัญชีธนาคารที่พบในคดีบ่อยที่สุด
+      </CardTitle>
+    </CardHeader>
+    <CardContent>
+      <div className="flex flex-col items-center gap-10">
+        {/* อันดับ 1 - กล่องใหญ่ตรงกลาง */}
+        {topAccounts[0] && (
+          <Link
+            href={`/groups/${
+              mockCases.find(c => c.account_number === topAccounts[0].account)?.groupId || "G020250119"
+            }`}
+            className="w-auto"
+          >
+            <div className="flex items-center gap-6 px-10 py-6 rounded-full shadow-lg bg-white hover:bg-gray-100 transition cursor-pointer">
+              <div
+                className="flex items-center justify-center rounded-full text-white font-bold bg-[#1C254F]"
+                style={{ width: "70px", height: "70px", fontSize: "2rem" }}
+              >
+                1
+              </div>
+              <div className="flex flex-col text-center">
+                <span className="font-bold text-3xl">{topAccounts[0].account}</span>
+                <span className="text-gray-600 text-lg">พบใน {topAccounts[0].caseCount} คดี</span>
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </Link>
+        )}
+
+        {/* อันดับ 2–5 - เรียงแนวนอนด้านล่าง */}
+        <div className="flex flex-wrap justify-center gap-6">
+          {topAccounts.slice(1).map((acc, idx) => {
+            const colors = ["#273880", "#515AA7", "#797ED0", "#A2A5FA"];
+            const rankColor = colors[idx] || "#A2A5FA";
+            return (
+              <div
+                key={acc.account}
+                className="flex items-center gap-4 px-6 py-3 rounded-full shadow bg-white"
+                style={{ minWidth: "200px" }}
+              >
+                <div
+                  className="flex items-center justify-center rounded-full text-white font-bold"
+                  style={{
+                    backgroundColor: rankColor,
+                    width: "50px",
+                    height: "50px",
+                    fontSize: "1.25rem",
+                  }}
+                >
+                  {idx + 2}
+                </div>
+                <div className="flex flex-col text-center">
+                  <span className="font-bold text-lg">{acc.account}</span>
+                  <span className="text-gray-600 text-sm">พบใน {acc.caseCount} คดี</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
+    </CardContent>
+  </Card>
+</div>
+
+
     </div>
   );
 }
