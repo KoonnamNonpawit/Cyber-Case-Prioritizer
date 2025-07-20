@@ -314,30 +314,59 @@ export default function DashboardPage() {
         </Card>
       </div>
         {/* Top 5 Accounts */}
-        <div className="max-w-7xl mx-auto px-4">
-        <Card className="bg-[#ECEBF2] shadow rounded-xl">
-          <CardHeader>
-            <CardTitle>5 บัญชีธนาคารที่พบในคดีบ่อยที่สุด</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col gap-3 sm:flex-row sm:gap-6 justify-around items-center">
-              {stats.topAccounts.map((acc, idx) => (
-                <div
-                  key={acc.account}
-                  className={`flex flex-col items-center justify-center px-4 py-2 rounded-full shadow-md ${
-                    idx === 0
-                      ? "bg-white text-blue-900 font-bold scale-110"
-                      : "bg-gray-200 text-gray-800"
-                  }`}
-                >
-                  <span className="text-lg">{idx + 1}. {acc.account}</span>
-                  <span className="text-sm">พบใน {acc.caseCount} คดี</span>
-                </div>
-              ))}
+<div className="max-w-7xl mx-auto px-4">
+  <Card className="bg-[#ECEBF2] shadow rounded-xl">
+    <CardHeader>
+      <CardTitle>5 บัญชีธนาคารที่พบในคดีบ่อยที่สุด</CardTitle>
+    </CardHeader>
+    <CardContent>
+      <div className="flex flex-col gap-4 sm:flex-row sm:gap-6 justify-center items-center">
+        {stats.topAccounts.map((acc, idx) => {
+          const colors = ["#1C254F", "#273880", "#515AA7", "#797ED0", "#A2A5FA"];
+          const rankColor = colors[idx] || "#A2A5FA";
+          const isFirst = idx === 0;
+
+          return (
+            <div
+              key={acc.account}
+              className={`flex flex-row items-center gap-4 px-6 py-3 rounded-full shadow-md transition-all ${
+                isFirst ? "scale-110 bg-white" : "bg-white"
+              }`}
+              style={{
+                border: `2px solid ${rankColor}`,
+                minWidth: isFirst ? "300px" : "240px",
+              }}
+            >
+              {/* วงกลมลำดับ */}
+              <div
+                className="flex items-center justify-center rounded-full text-white font-bold"
+                style={{
+                  backgroundColor: rankColor,
+                  width: isFirst ? "50px" : "40px",
+                  height: isFirst ? "50px" : "40px",
+                  fontSize: isFirst ? "1.5rem" : "1rem",
+                }}
+              >
+                {idx + 1}
+              </div>
+
+              {/* ข้อมูลบัญชี */}
+              <div className="flex flex-col text-center sm:text-left">
+                <span className={`font-bold ${isFirst ? "text-xl" : "text-base"}`}>
+                  {acc.account}
+                </span>
+                <span className="text-sm text-gray-700">
+                  พบใน {acc.caseCount} คดี
+                </span>
+              </div>
             </div>
-          </CardContent>
-        </Card>
+          );
+        })}
       </div>
+    </CardContent>
+  </Card>
+</div>
+
     </div>
   );
 }
