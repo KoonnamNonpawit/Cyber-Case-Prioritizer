@@ -23,6 +23,71 @@ def get_db_conn():
     conn = psycopg2.connect(db_url)
     return conn
 
+def update_case_links(case_id):
+    """
+    ตรวจสอบคดีอื่น ๆ ว่ามีความคล้ายกับคดีนี้หรือไม่ และเสนอการจัดกลุ่ม
+    """
+    conn = get_db_conn()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+    # ดึงรายละเอียดของคดีนี้
+    cursor.execute("SELECT * FROM cases WHERE id = %s", (case_id,))
+    new_case = cursor.fetchone()
+    if not new_case:
+        return
+
+    # ดึงกลุ่มคดีที่มีอยู่
+    cursor.execute("SELECT id, group_number FROM case_groups")
+    existing_groups = cursor.fetchall()
+
+    best_group = None
+    best_score = 0.0
+
+    for group in existing_groups:
+        # ตัวอย่าง: หาเคสในกลุ่มนี้ เพื่อเปรียบเทียบ
+        cursor.execute("SELECT * FROM cases WHERE group_id = %s", (group['group_number'],))
+        group_cases = cursor.fetchall()
+
+        if not group_cases:
+            continue
+
+        # คำนวณ similarity โดยใช้ชื่อคดีเป็นเกณฑ์ง่าย ๆ (สามารถเปลี่ยนเป็น NLP ได้)
+        sim_scores = [
+            jellyfish.jaro_winkler_similarity(new_case['case_name'], c['case_name'])
+            for c in group_cases
+        ]
+        avg_sim = sum(sim_scores) / len(sim_scores)
+
+        if avg_sim > best_score and avg_sim >= 0.85:
+            best_score = avg_sim
+            best_group = group
+
+    if best_group:
+        # เสนอให้เข้า group นี้
+        suggestion_id = str(uuid.uuid4())
+        cursor.execute("""
+            INSERT INTO case_group_suggestions (id, case_id, suggested_group_id, ml_score, status)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (suggestion_id, case_id, best_group['id'], best_score, 'pending'))
+
+    conn.commit()
+    conn.close()
+
+def get_best_suggested_group(case_id):
+    conn = get_db_conn()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor.execute("""
+        SELECT cg.id, cg.group_number, s.ml_score
+        FROM case_group_suggestions s
+        JOIN case_groups cg ON s.suggested_group_id = cg.id
+        WHERE s.case_id = %s AND s.status = 'pending'
+        ORDER BY s.ml_score DESC
+        LIMIT 1
+    """, (case_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return row if row else None
+
 # --- Dashboard Stats API ---
 @main_bp.route('/dashboard', methods=['GET'])
 def get_dashboard_stats():
@@ -258,9 +323,9 @@ def rank_case():
         }
 
        # Apply mappings
-        input_df['reputational_damage_level'] = input_df['reputational_damage_level'].map(REPUTATIONAL_DAMAGE_MAP).fillna("None")
+        input_df['reputational_damage_level'] = input_df['reputational_damage_level'].map(REPUTATIONAL_DAMAGE_MAP).fillna("Low")
         input_df['technical_complexity_level'] = input_df['technical_complexity_level'].map(TECHNICAL_COMPLEXITY_MAP).fillna("Low")
-        input_df['initial_evidence_clarity'] = input_df['initial_evidence_clarity'].map(EVIDENCE_CLARITY_MAP).fillna("None")
+        input_df['initial_evidence_clarity'] = input_df['initial_evidence_clarity'].map(EVIDENCE_CLARITY_MAP).fillna("Medium")
 
         # Fill missing columns
         all_model_features = ml_service.CATEGORICAL_FEATURES + ml_service.ORDINAL_FEATURES + ml_service.NUMERICAL_FEATURES + ml_service.BINARY_FEATURES
@@ -382,7 +447,7 @@ def rank_case():
         for ev in structured_evidence_data:
             evidence_id = str(uuid.uuid4())
             cursor.execute("""
-                INSERT INTO structured_evidence (id, case_id, evidence_type, evidence_value, created_timestamp) 
+                INSERT INTO structured_evidence (id, case_number, evidence_type, evidence_value, created_timestamp) 
                 VALUES (%s, %s, %s, %s, %s)
             """, (
                 evidence_id, case_id, ev.get('evidence_type'), ev.get('evidence_value'), current_time
@@ -477,7 +542,6 @@ def get_case_by_number(case_number):
         return jsonify({"error": "Failed to retrieve case details."}), 500
 
 @main_bp.route('/suggestion_group_case/<string:group_number>', methods=['GET'])
-@main_bp.route('/suggestion_group_case/<string:group_number>', methods=['GET'])
 def get_suggested_cases_by_group(group_number):
     try:
         conn = get_db_conn()
@@ -509,6 +573,40 @@ def get_suggested_cases_by_group(group_number):
         current_app.logger.error(f"Failed to load suggestions: {e}")
         return jsonify({"error": "Failed to retrieve suggestions."}), 500
 
+@main_bp.route('/case_group_suggestions/<string:suggestion_id>/respond', methods=['POST'])
+def respond_group_suggestion(suggestion_id):
+    data = request.get_json()
+    action = data.get('action')  # 'accept' หรือ 'reject'
+
+    if action not in ['accept', 'reject']:
+        return jsonify({"error": "Invalid action"}), 400
+
+    try:
+        conn = get_db_conn()
+        cursor = conn.cursor()
+
+        # ดึง suggestion เดิม
+        cursor.execute("SELECT case_id, suggested_group_id FROM case_group_suggestions WHERE id = %s", (suggestion_id,))
+        suggestion = cursor.fetchone()
+
+        if not suggestion:
+            return jsonify({"error": "Suggestion not found"}), 404
+
+        if action == 'accept':
+            # อัปเดต case ให้เข้า group
+            cursor.execute("UPDATE cases SET group_id = %s WHERE id = %s", (suggestion['suggested_group_id'], suggestion['case_id']))
+        
+        # อัปเดตสถานะของ suggestion
+        cursor.execute("UPDATE case_group_suggestions SET status = %s WHERE id = %s", (action, suggestion_id))
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({"message": f"Suggestion {action}ed successfully"}), 200
+
+    except Exception as e:
+        current_app.logger.error(f"Failed to respond to suggestion {suggestion_id}: {e}")
+        return jsonify({"error": "Server error"}), 500
 
 @main_bp.route('/cases/<string:case_number>', methods=['PUT'])
 def update_case(case_number):
@@ -529,7 +627,6 @@ def update_case(case_number):
         current_time = datetime.datetime.now().isoformat()
         date_closed = None
 
-        # ดึง date_closed ของ case เดิม (ใช้ %s แทน ?)
         cursor.execute("SELECT date_closed FROM cases WHERE case_number = %s", (case_number,))
         old_case = cursor.fetchone()
         if case_details.get('status') == 'ปิดคดี':
@@ -579,7 +676,7 @@ def delete_case(case_id):
         conn = get_db_conn()
         cursor = conn.cursor()
 
-        cursor.execute("SELECT complainant_id FROM cases WHERE id = ?", (case_id,))
+        cursor.execute("SELECT complainant_id FROM cases WHERE id = %s", (case_id,))
         result = cursor.fetchone()
         if not result:
             conn.close()
@@ -587,10 +684,10 @@ def delete_case(case_id):
         
         complainant_id_to_delete = result['complainant_id']
 
-        cursor.execute("DELETE FROM cases WHERE id = ?", (case_id,))
+        cursor.execute("DELETE FROM cases WHERE id = %s", (case_id,))
         
         if complainant_id_to_delete:
-            cursor.execute("DELETE FROM complainants WHERE id = ?", (complainant_id_to_delete,))
+            cursor.execute("DELETE FROM complainants WHERE id = %s", (complainant_id_to_delete,))
 
         conn.commit()
         conn.close()
@@ -644,7 +741,7 @@ def upload_file(case_id):
 @main_bp.route('/cases/<string:case_id>/files', methods=['GET'])
 def get_case_files(case_id):
     conn = get_db_conn()
-    files = conn.execute("SELECT id, original_filename, upload_timestamp FROM evidence_files WHERE case_id = ?", (case_id,)).fetchall()
+    files = conn.execute("SELECT id, original_filename, upload_timestamp FROM evidence_files WHERE case_id = %s", (case_id,)).fetchall()
     conn.close()
     return jsonify([dict(row) for row in files]), 200
 
@@ -659,7 +756,7 @@ def delete_file(file_id):
     conn = get_db_conn()
     cursor = conn.cursor()
     
-    file_info = cursor.execute("SELECT stored_filename FROM evidence_files WHERE id = ?", (file_id,)).fetchone()
+    file_info = cursor.execute("SELECT stored_filename FROM evidence_files WHERE id = %s", (file_id,)).fetchone()
     
     if file_info:
         # Delete file from filesystem
@@ -668,7 +765,7 @@ def delete_file(file_id):
             os.remove(file_path)
         
         # Delete record from database
-        cursor.execute("DELETE FROM evidence_files WHERE id = ?", (file_id,))
+        cursor.execute("DELETE FROM evidence_files WHERE id = %s", (file_id,))
         conn.commit()
         conn.close()
         return jsonify({"message": "File deleted successfully"}), 200
