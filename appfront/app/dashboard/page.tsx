@@ -46,18 +46,17 @@ interface ApiDashboardStats {
     day: string;
     count: number;
   }[];
-}
-
-interface MonthlyChartData {
-  month: string;
-  [key: string]: string | number;
+  top_5_accounts?: {
+    account_number: string;
+    case_count: number;
+  }[];
 }
 
 interface TransformedStats {
   summaryStats: { title: string; value: number }[];
   casesToday: number;
   caseTypes: { name: string; value: number }[];
-  monthlyData: MonthlyChartData[];
+  monthlyData: { month: string; [key: string]: string | number }[];
   weeklyData: { day: string; value: number }[];
   topCases: {
     id: string;
@@ -68,6 +67,10 @@ interface TransformedStats {
     date: string;
     summary: string | null;
     rating: number;
+  }[];
+  topAccounts: {
+    account: string;
+    caseCount: number;
   }[];
 }
 
@@ -116,6 +119,15 @@ function fillWeeklyData(data: { day: string; count: number }[]) {
 
 const chartColors = ["#632D9C", "#BC298C", "#F24B72", "#F9F871", "#FF7F6A", "#FFBA5B"];
 
+// MOCK ข้อมูลบัญชีธนาคาร 5 อันดับ (จะเชื่อม API จริงในภายหลัง)
+const mockTopAccounts = [
+  { account: "XXX-X-XXXXX-X", caseCount: 12 },
+  { account: "XXX-X-XXXX-X", caseCount: 10 },
+  { account: "XXX-X-XXXXX-X", caseCount: 8 },
+  { account: "XXX-X-XXXX-X", caseCount: 7 },
+  { account: "XXX-X-XXXXX-X", caseCount: 6 },
+];
+
 export default function DashboardPage() {
   const [stats, setStats] = useState<TransformedStats | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -153,6 +165,9 @@ export default function DashboardPage() {
             summary: caseItem.description,
             rating: getStarRating(caseItem.priority_score),
           })),
+          topAccounts: data.top_5_accounts
+            ? data.top_5_accounts.map((a) => ({ account: a.account_number, caseCount: a.case_count }))
+            : mockTopAccounts, // ถ้า API ยังไม่มี ใช้ mock
         };
 
         setStats(transformedData);
@@ -298,6 +313,32 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+        {/* Top 5 Accounts */}
+        <div className="max-w-7xl mx-auto px-4">
+        <Card className="bg-[#ECEBF2] shadow rounded-xl">
+          <CardHeader>
+            <CardTitle>5 บัญชีธนาคารที่พบในคดีบ่อยที่สุด</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col gap-3 sm:flex-row sm:gap-6 justify-around items-center">
+              {stats.topAccounts.map((acc, idx) => (
+                <div
+                  key={acc.account}
+                  className={`flex flex-col items-center justify-center px-4 py-2 rounded-full shadow-md ${
+                    idx === 0
+                      ? "bg-white text-blue-900 font-bold scale-110"
+                      : "bg-gray-200 text-gray-800"
+                  }`}
+                >
+                  <span className="text-lg">{idx + 1}. {acc.account}</span>
+                  <span className="text-sm">พบใน {acc.caseCount} คดี</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
+

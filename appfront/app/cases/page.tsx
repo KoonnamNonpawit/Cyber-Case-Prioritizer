@@ -1,8 +1,14 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Plus, SlidersHorizontal, Star, StarHalf, StarOff } from "lucide-react";
+import {
+  Plus,
+  Star,
+  StarHalf,
+  StarOff,
+  Layers,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -13,27 +19,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
 
-interface Case {
-  id: string;
-  case_number: string;
-  case_name: string;
-  num_victims: number;
-  estimated_financial_damage: number;
-  timestamp: string;
-  description: string;
-  priority_score: number;
-  status: string;
-  case_type: string;
-}
+// ใช้ mockCases กลางแทนสร้างเอง
+import { mockCases, Case } from "@/app/mockCases";
 
 interface Pagination {
   page: number;
@@ -45,53 +33,83 @@ interface Pagination {
 export default function CaseListPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [cases, setCases] = useState<Case[]>([]);
-  const [pagination, setPagination] = useState<Pagination | null>(null);
+  const [pagination, setPagination] = useState<Pagination>({
+    page: 1,
+    limit: 12,
+    total_records: mockCases.length,
+    total_pages: Math.ceil(mockCases.length / 12),
+  });
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
 
-  const fetchCases = useCallback(
-    async (page = 1, currentFilters = filters, currentSearch = searchTerm) => {
-      setLoading(true);
-      setError(null);
-      try {
-        const params = new URLSearchParams({
-          page: String(page),
-          limit: "12",
-          ...currentFilters,
-        });
-        if (currentSearch) params.append("q", currentSearch);
+  // ฟังก์ชันจำลองการดึงข้อมูล (ใช้ mockCases)
+  const fetchCases = (page = 1, currentFilters = filters, currentSearch = searchTerm) => {
+    setLoading(true);
+    setError(null);
 
-        const apiUrl = `${
-          process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:5001"
-        }/cases?${params.toString()}`;
-        const response = await fetch(apiUrl);
-        if (!response.ok) throw new Error(`Failed: ${response.statusText}`);
+    try {
+      let data = [...mockCases];
 
-        const result = await response.json();
-        setCases(result.data);
-        setPagination(result.pagination);
-        setCurrentPage(page);
-      } catch (err: any) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
+      // กรอง search
+      if (currentSearch) {
+        data = data.filter(
+          (c) =>
+            c.case_number.includes(currentSearch) ||
+            c.case_name.includes(currentSearch)
+        );
       }
-    },
-    [filters, searchTerm]
-  );
+
+      // กรอง filters
+      if (currentFilters.case_type) {
+        data = data.filter((c) => c.case_type === currentFilters.case_type);
+      }
+      if (currentFilters.status) {
+        data = data.filter((c) => c.status === currentFilters.status);
+      }
+
+      // การเรียงลำดับ
+      if (currentFilters.sort_by === "priority") {
+        data = data.sort((a, b) => b.priority_score - a.priority_score);
+      } else if (currentFilters.sort_by === "date") {
+        data = data.sort(
+          (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        );
+      } else if (currentFilters.sort_by === "damage") {
+        data = data.sort((a, b) => b.estimated_financial_damage - a.estimated_financial_damage);
+      }
+
+      // แบ่งหน้า
+      const start = (page - 1) * 12;
+      const end = start + 12;
+      const paginated = data.slice(start, end);
+
+      setCases(paginated);
+      setPagination({
+        page,
+        limit: 12,
+        total_records: data.length,
+        total_pages: Math.ceil(data.length / 12),
+      });
+      setCurrentPage(page);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     fetchCases(1, filters);
-  }, [filters, fetchCases]);
+  }, [filters]);
 
   useEffect(() => {
     const timerId = setTimeout(() => {
       fetchCases(1, filters, searchTerm);
     }, 500);
     return () => clearTimeout(timerId);
-  }, [searchTerm, filters, fetchCases]);
+  }, [searchTerm, filters]);
 
   const handleFilterChange = (key: string, value: string) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -124,89 +142,91 @@ export default function CaseListPage() {
         </Link>
       </div>
 
-   {/* Search + Filter Bar */}
-<div className="bg-[#ECEBF2] p-4 rounded-xl shadow-md space-y-3">
-  {/* Search */}
-  <div className="flex items-center gap-3">
-    <Input
-      placeholder="หมายเลขคดี/ชื่อคดี"
-      value={searchTerm}
-      onChange={(e) => setSearchTerm(e.target.value)}
-      className="flex-1 bg-white"
-    />
-  </div>
+      {/* Search + Filter Bar */}
+      <div className="bg-[#ECEBF2] p-4 rounded-xl shadow-md space-y-3">
+        <div className="flex items-center gap-3">
+          <Input
+            placeholder="หมายเลขคดี/ชื่อคดี"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="flex-1 bg-white"
+          />
+        </div>
+        <div className="flex flex-wrap gap-3 items-center">
+          <Select
+            value={filters.case_type || ""}
+            onValueChange={(v) => handleFilterChange("case_type", v)}
+          >
+            <SelectTrigger className="w-[200px] bg-white">
+              <SelectValue placeholder="ประเภทของคดี" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Hacking">Hacking</SelectItem>
+              <SelectItem value="Scam">Scam</SelectItem>
+              <SelectItem value="Phishing">Phishing</SelectItem>
+              <SelectItem value="Illegal Content">Illegal Content</SelectItem>
+              <SelectItem value="Cyberbullying">Cyberbullying</SelectItem>
+              <SelectItem value="Other">Other</SelectItem>
+            </SelectContent>
+          </Select>
 
-  {/* Dropdown Filters */}
-  <div className="flex flex-wrap gap-3 items-center">
-    {/* ประเภทคดี */}
-    <Select
-      value={filters.case_type || ""}
-      onValueChange={(v) => handleFilterChange("case_type", v)}
-    >
-      <SelectTrigger className="w-[200px] bg-white">
-        <SelectValue placeholder="ประเภทของคดี" />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="Hacking">Hacking</SelectItem>
-        <SelectItem value="Scam">Scam</SelectItem>
-        <SelectItem value="Phishing">Phishing</SelectItem>
-        <SelectItem value="Illegal Content">Illegal Content</SelectItem>
-        <SelectItem value="Cyberbullying">Cyberbullying</SelectItem>
-        <SelectItem value="Other">Other</SelectItem>
-      </SelectContent>
-    </Select>
+          <Select
+            value={filters.status || ""}
+            onValueChange={(v) => handleFilterChange("status", v)}
+          >
+            <SelectTrigger className="w-[200px] bg-white">
+              <SelectValue placeholder="สถานะของคดี" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="รับเรื่อง">รับเรื่อง</SelectItem>
+              <SelectItem value="กำลังสืบสวน">กำลังสืบสวน</SelectItem>
+              <SelectItem value="ปิดคดี">ปิดคดี</SelectItem>
+            </SelectContent>
+          </Select>
 
-    {/* สถานะคดี */}
-    <Select
-      value={filters.status || ""}
-      onValueChange={(v) => handleFilterChange("status", v)}
-    >
-      <SelectTrigger className="w-[200px] bg-white">
-        <SelectValue placeholder="สถานะของคดี" />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="รับเรื่อง">รับเรื่อง</SelectItem>
-        <SelectItem value="กำลังสืบสวน">กำลังสืบสวน</SelectItem>
-        <SelectItem value="ปิดคดี">ปิดคดี</SelectItem>
-      </SelectContent>
-    </Select>
+          <Select
+            value={filters.sort_by || ""}
+            onValueChange={(v) => handleFilterChange("sort_by", v)}
+          >
+            <SelectTrigger className="w-[200px] bg-white">
+              <SelectValue placeholder="การจัดเรียงข้อมูล" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="priority">คะแนนความสำคัญ</SelectItem>
+              <SelectItem value="date">วันที่</SelectItem>
+              <SelectItem value="damage">ความเสียหาย</SelectItem>
+            </SelectContent>
+          </Select>
 
-    {/* การเรียงข้อมูล */}
-    <Select
-      value={filters.sort_by || ""}
-      onValueChange={(v) => handleFilterChange("sort_by", v)}
-    >
-      <SelectTrigger className="w-[200px] bg-white">
-        <SelectValue placeholder="การจัดเรียงข้อมูล" />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="priority">คะแนนความสำคัญ</SelectItem>
-        <SelectItem value="date">วันที่</SelectItem>
-        <SelectItem value="damage">ความเสียหาย</SelectItem>
-      </SelectContent>
-    </Select>
-
-    {/* ปุ่มล้างตัวกรอง */}
-    <Button
-      variant="outline"
-      className="ml-auto text-sm"
-      onClick={handleResetFilters}
-    >
-      ล้างตัวกรอง
-    </Button>
-  </div>
-</div>
+          <Button
+            variant="outline"
+            className="ml-auto text-sm"
+            onClick={handleResetFilters}
+          >
+            ล้างตัวกรอง
+          </Button>
+        </div>
+      </div>
 
       {/* Case Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {cases.map((item) => (
-          <Card key={item.id} className="bg-[#ECEBF2] p-4 space-y-2 rounded-xl">
+          <Card
+            key={item.id}
+            className="bg-[#ECEBF2] p-4 space-y-2 rounded-xl relative"
+          >
+            {/* ถ้ามี groupId แสดงปุ่มไปหน้ากลุ่ม */}
+            {item.groupId && (
+              <Link href={`/groups/${item.groupId}`} title="ดูคดีในกลุ่มเดียวกัน">
+                <Layers className="absolute top-3 right-3 w-5 h-5 text-gray-600 hover:text-blue-700 cursor-pointer" />
+              </Link>
+            )}
             <CardContent className="space-y-2">
               <p className="font-bold text-sm text-gray-700">{item.case_number}</p>
               <p className="text-xl font-bold">{item.case_name}</p>
               <div className="flex justify-between text-sm text-red-700 font-semibold">
                 <p>👥 {item.num_victims ?? 0}</p>
-                <p>฿ {item.estimated_financial_damage ?? 0}</p>
+                <p>฿ {item.estimated_financial_damage.toLocaleString()}</p>
                 <p>📅 {new Date(item.timestamp).toLocaleDateString("th-TH")}</p>
               </div>
               <p className="text-sm text-gray-800 line-clamp-4">
