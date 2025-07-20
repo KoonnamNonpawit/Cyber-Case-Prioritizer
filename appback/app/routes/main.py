@@ -10,9 +10,18 @@ import datetime
 import math
 import os
 from app.services import ml_service
-from app.db import get_db_conn
+
 
 main_bp = Blueprint('main', __name__)
+
+# --- Helper Functions ---
+def get_db_conn():
+    """Establishes a connection to the PostgreSQL database."""
+    db_url = os.environ.get('DATABASE_URL')
+    if not db_url:
+        raise Exception("DATABASE_URL environment variable is not set.")
+    conn = psycopg2.connect(db_url)
+    return conn
 
 # --- Dashboard Stats API ---
 @main_bp.route('/dashboard', methods=['GET'])
