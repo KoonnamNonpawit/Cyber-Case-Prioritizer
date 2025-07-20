@@ -12,10 +12,21 @@ import joblib
 import os
 
 # --- 1. Define All Features for the Model ---
-TEXT_FEATURES = ['reputational_damage_level', 'technical_complexity_level', 'initial_evidence_clarity', 'case_type']
-BINARY_FEATURES = ['sensitive_data_compromised', 'ongoing_threat', 'risk_of_evidence_loss', 'has_actionable_evidence', 'is_grouped']
-NUMERICAL_FEATURES = ['estimated_financial_damage', 'num_victims', 'evidence_count', 'days_since_creation', 'num_linked_cases']
+CATEGORICAL_FEATURES = ['case_type']
+ORDINAL_FEATURES = ['reputational_damage_level', 'technical_complexity_level', 'initial_evidence_clarity']
+BINARY_FEATURES = [
+    'sensitive_data_compromised', 'ongoing_threat', 'risk_of_evidence_loss',
+    'has_actionable_evidence', 'is_grouped'
+]
+NUMERICAL_FEATURES = [
+    'estimated_financial_damage', 'num_victims', 'evidence_count',
+    'days_since_creation', 'num_linked_cases'
+]
 TARGET_COLUMN = 'priority_score'
+
+REPUTATIONAL_DAMAGE_ORDER = ['None', 'Low', 'Medium', 'High', 'Critical']
+TECHNICAL_COMPLEXITY_ORDER = ['Low', 'Medium', 'High', 'Very High', 'Extreme']
+INITIAL_EVIDENCE_ORDER = ['None', 'Low', 'Medium', 'High', 'Very High']
 
 # --- Helper Function for DB Connection (Corrected) ---
 def get_db_conn():
@@ -119,26 +130,15 @@ def train_ml_model():
         for col in BINARY_FEATURES:
             df_train[col] = df_train[col].fillna(False).astype(int)
 
-        # --- 4. อัปเดต Preprocessing Pipeline ---
-        # เราจะสร้าง Pipeline ย่อยสำหรับ Text Features
-        text_pipeline = Pipeline([
-            ('tfidf', TfidfVectorizer(ngram_range=(1, 2))) # ngram_range ช่วยให้มองเห็นกลุ่มคำด้วย
-        ])
-
         preprocessor = ColumnTransformer(
-            transformers=[
-                # ใช้ text_pipeline กับทุกฟีเจอร์ที่เป็นข้อความ
-                ('text_case_type', text_pipeline, 'case_type'),
-                ('text_reputation', text_pipeline, 'reputational_damage_level'),
-                ('text_complexity', text_pipeline, 'technical_complexity_level'),
-                ('text_clarity', text_pipeline, 'initial_evidence_clarity'),
-                
-                # ส่วนของ Numerical และ Binary ยังคงเหมือนเดิม
-                ('num', StandardScaler(), NUMERICAL_FEATURES),
-                ('bin', 'passthrough', BINARY_FEATURES)
-            ],
-            remainder='drop'
-        )
+        transformers=[
+            ('cat', OneHotEncoder(handle_unknown='ignore'), CATEGORICAL_FEATURES),
+            ('ord', OrdinalEncoder(categories=[REPUTATIONAL_DAMAGE_ORDER, TECHNICAL_COMPLEXITY_ORDER, INITIAL_EVIDENCE_ORDER]), ORDINAL_FEATURES),
+            ('num', StandardScaler(), NUMERICAL_FEATURES),
+            ('bin', 'passthrough', BINARY_FEATURES) # <<< แก้ไขโดยการแยก Binary ออกมา
+        ],
+        remainder='drop'
+    )
 
         # --- 5. สร้างและฝึกสอนโมเดล (เหมือนเดิม) ---
         model = RandomForestRegressor(n_estimators=100, random_state=42)

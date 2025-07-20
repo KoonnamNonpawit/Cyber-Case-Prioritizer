@@ -10,7 +10,7 @@ import uuid
 import datetime
 import math
 import os
-from app.services import ml_service
+from app.services import ml_service,linking_service
 
 main_bp = Blueprint('record', __name__)
 
@@ -183,19 +183,11 @@ def rank_case():
     ml_model_pipeline = current_app.config['ML_PIPELINE']
     if not ml_model_pipeline:
         return jsonify({"error": "Model is not loaded."}), 503
-    
-    # รองรับทั้ง JSON ธรรมดา หรือ multipart/form-data ที่ field 'data' เป็น JSON string
-    if request.is_json:
-        data = request.get_json()
-    else:
-        data_str = request.form.get('data')
-        if not data_str:
-            return jsonify({"error": "Missing case data."}), 400
-        data = json.loads(data_str)
-    
+
+    data = request.get_json()
     if not data or 'case_details' not in data or 'complainant' not in data:
-        return jsonify({"error": "Invalid data format. Required keys: 'case_details', 'complainant'."}), 400
-    
+        return jsonify({"error": "Invalid data format."}), 400
+
     case_details = data['case_details']
     complainant_data = data['complainant']
     officers_data = data.get('officers', [])
@@ -206,78 +198,72 @@ def rank_case():
         # เตรียมข้อมูลสำหรับโมเดล
         case_details_filled = case_details.copy()
 
-        # เติมค่า default สำหรับฟีเจอร์ที่ขาด (keeping this for any missing basic features)
-        basic_features = ['estimated_financial_damage', 'num_victims', 'reputational_damage_level', 
-                         'sensitive_data_compromised', 'ongoing_threat', 'risk_of_evidence_loss',
-                         'technical_complexity_level', 'initial_evidence_clarity']
-        for feature in basic_features:
-            if feature not in case_details_filled:
-                case_details_filled[feature] = 0
-
-        # แปลงค่า bool ให้เป็น int (0 หรือ 1) เพื่อให้ sklearn ไม่ error
-        for bool_col in ml_service.BINARY_FEATURES:
-            val = case_details_filled.get(bool_col, False)
-            if isinstance(val, bool):
-                case_details_filled[bool_col] = int(val)
-            else:
-                # หากไม่ได้เป็น bool อาจเป็น 0/1 อยู่แล้ว ให้ลองแปลงเป็น int
-                case_details_filled[bool_col] = int(bool(int(val)))
-
-        # **FIX: Create DataFrame with proper feature alignment**
         # Calculate derived features that the model expects
         case_details_filled['evidence_count'] = len(structured_evidence_data)
-        case_details_filled['has_actionable_evidence'] = int(any(
+        case_details_filled['has_actionable_evidence'] = any(
             ev.get('evidence_type', '').upper() in ['BANK_ACCOUNT', 'PHONE_NUMBER'] 
             for ev in structured_evidence_data
-        ))
+        )
         case_details_filled['days_since_creation'] = 0  # New case
         case_details_filled['num_linked_cases'] = 0     # New case, no links yet
-        case_details_filled['is_grouped'] = 0           # New case, not grouped yet
+        case_details_filled['is_grouped'] = False           # New case, not grouped yet
 
         # Create DataFrame with all features expected by the model
         input_df = pd.DataFrame([case_details_filled])
-        
-        # Select only the features the model was trained on, in the correct order
-        all_model_features = (ml_service.TEXT_FEATURES + 
-                             ml_service.BINARY_FEATURES + 
-                             ml_service.NUMERICAL_FEATURES + 
-                             ml_service.TARGET_COLUMN)
-        
-        # Ensure we have all required features
+        all_features = (
+            ml_service.CATEGORICAL_FEATURES +
+            ml_service.ORDINAL_FEATURES +
+            ml_service.NUMERICAL_FEATURES +
+            ml_service.BINARY_FEATURES
+        )
+        for feature in all_features:
+            if feature not in input_df.columns:
+                # ถ้าไม่มีคอลัมน์นั้น ให้สร้างขึ้นมาแล้วเติมค่า default ที่เหมาะสม
+                if feature in ml_service.BINARY_FEATURES:
+                    input_df[feature] = 0 # False
+                elif feature in ml_service.NUMERICAL_FEATURES:
+                    input_df[feature] = 0
+                else:
+                    input_df[feature] = 'None' # หรือ 'Unknown'
+        REPUTATIONAL_DAMAGE_MAP = {
+            "1": "Low", "2": "Medium", "3": "High", "4": "Critical", "None": "None", None: "None",
+            1: "Low", 2: "Medium", 3: "High", 4: "Critical"
+        }
+        TECHNICAL_COMPLEXITY_MAP = {
+            "1": "Low", "2": "Medium", "3": "High", "4": "Very High", "5": "Extreme", "None": "Low", None: "Low",
+            1: "Low", 2: "Medium", 3: "High", 4: "Very High", 5: "Extreme"
+        }
+        EVIDENCE_CLARITY_MAP = {
+            "1": "Low", "2": "Medium", "3": "High", "4": "Very High", "None": "None", None: "None",
+            1: "Low", 2: "Medium", 3: "High", 4: "Very High"
+        }
+
+       # Apply mappings
+        input_df['reputational_damage_level'] = input_df['reputational_damage_level'].map(REPUTATIONAL_DAMAGE_MAP).fillna("None")
+        input_df['technical_complexity_level'] = input_df['technical_complexity_level'].map(TECHNICAL_COMPLEXITY_MAP).fillna("Low")
+        input_df['initial_evidence_clarity'] = input_df['initial_evidence_clarity'].map(EVIDENCE_CLARITY_MAP).fillna("None")
+
+        # Fill missing columns
+        all_model_features = ml_service.CATEGORICAL_FEATURES + ml_service.ORDINAL_FEATURES + ml_service.NUMERICAL_FEATURES + ml_service.BINARY_FEATURES
         for feature in all_model_features:
             if feature not in input_df.columns:
-                input_df[feature] = 0
-        
-        # Select features in the exact order used during training
+                if feature in ml_service.BINARY_FEATURES:
+                    input_df[feature] = 0
+                elif feature in ml_service.NUMERICAL_FEATURES:
+                    input_df[feature] = 0
+                else:
+                    input_df[feature] = 'None'
+
+        # Clean and convert dtypes
+        for col in ml_service.CATEGORICAL_FEATURES + ml_service.ORDINAL_FEATURES:
+            input_df[col] = input_df[col].astype(str)
+        for col in ml_service.BINARY_FEATURES:
+            input_df[col] = input_df[col].apply(lambda x: 1 if x == True else 0)
+
         input_df = input_df[all_model_features]
-        
-        # **CRITICAL FIX: Proper data type handling for sklearn pipeline**
-        # Categorical features should remain as strings (OneHotEncoder handles them)
-        for cat_feature in ml_service.CATEGORICAL_FEATURES:
-            if cat_feature in input_df.columns:
-                input_df[cat_feature] = input_df[cat_feature].astype(str)
-        
-        # Ordinal features should be integers but within expected ranges
-        for ord_feature in ml_service.ORDINAL_FEATURES:
-            if ord_feature in input_df.columns:
-                input_df[ord_feature] = pd.to_numeric(input_df[ord_feature], errors='coerce').fillna(0)
-                # Ensure values are within expected ranges (adjust based on your ordinal mappings)
-                if ord_feature == 'reputational_damage_level':
-                    input_df[ord_feature] = input_df[ord_feature].clip(0, 4)  # 0-4 range
-                elif ord_feature == 'technical_complexity_level':
-                    input_df[ord_feature] = input_df[ord_feature].clip(0, 4)  # 0-4 range  
-                elif ord_feature == 'initial_evidence_clarity':
-                    input_df[ord_feature] = input_df[ord_feature].clip(0, 4)  # 0-4 range
-        
-        # Numerical and binary features should be numeric
-        for num_feature in ml_service.NUMERICAL_FEATURES + ml_service.BINARY_FEATURES:
-            if num_feature in input_df.columns:
-                input_df[num_feature] = pd.to_numeric(input_df[num_feature], errors='coerce').fillna(0)
-        
-        current_app.logger.info(f"DataFrame dtypes before prediction:\n{input_df.dtypes}")
-        current_app.logger.info(f"DataFrame values:\n{input_df.head()}")
-        current_app.logger.info(f"DataFrame shape: {input_df.shape}")
-        current_app.logger.info(f"Expected features: {all_model_features}")
+        # เช็คว่า dtype ถูกต้องก่อนเข้า predict
+        print(input_df.dtypes)
+        print(input_df.head())
         
         priority_score = ml_model_pipeline.predict(input_df)[0]
         priority_score = max(0, min(100, priority_score))
@@ -300,6 +286,10 @@ def rank_case():
         case_id = str(uuid.uuid4())
         current_time = datetime.datetime.now().isoformat()
 
+        sensitive_data_compromised = bool(case_details_filled.get('sensitive_data_compromised', 0))
+        ongoing_threat = bool(case_details_filled.get('ongoing_threat', 0))
+        risk_of_evidence_loss = bool(case_details_filled.get('risk_of_evidence_loss', 0))
+
         # Insert case
         cursor.execute("""
             INSERT INTO cases (
@@ -307,24 +297,32 @@ def rank_case():
                 case_type, description, estimated_financial_damage, num_victims, 
                 reputational_damage_level, sensitive_data_compromised, ongoing_threat, 
                 risk_of_evidence_loss, technical_complexity_level, initial_evidence_clarity, 
-                complainant_id
+                complainant_id, group_id, suspests
             ) 
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
-            case_id, case_details.get('case_number'), case_details.get('case_name'), 
-            current_time, # timestamp
-            current_time, # last_updated
-            None,         # date_closed
-            'รับเรื่อง',    
-            float(priority_score), 
-            case_details.get('case_type'), case_details.get('description'), 
-            case_details.get('estimated_financial_damage'), case_details.get('num_victims'), 
-            case_details.get('reputational_damage_level'), case_details_filled['sensitive_data_compromised'], 
-            case_details_filled['ongoing_threat'], case_details.get('risk_of_evidence_loss'), 
-            case_details.get('technical_complexity_level'), case_details.get('initial_evidence_clarity'), 
-            complainant_id
+            case_id, 
+            case_details.get('case_number'), 
+            case_details.get('case_name'), 
+            current_time,               # timestamp as datetime
+            current_time,               # last_updated as datetime
+            None,                      # date_closed (ยังไม่ปิดคดี)
+            'รับเรื่อง',               # status (string)
+            float(priority_score),      # priority_score (float)
+            case_details.get('case_type'), 
+            case_details.get('description'), 
+            int(case_details.get('estimated_financial_damage', 0)), 
+            int(case_details.get('num_victims', 0)), 
+            case_details.get('reputational_damage_level'), 
+            sensitive_data_compromised,  # boolean
+            ongoing_threat,              # boolean
+            risk_of_evidence_loss,       # boolean
+            case_details.get('technical_complexity_level'), 
+            case_details.get('initial_evidence_clarity'), 
+            complainant_id, 
+            None,      # group_id (ถ้าไม่มี ให้ใส่ None)
+            None       # suspests (ถ้าไม่มี ให้ใส่ None)
         ))
-
         # Insert officers (ถ้ามี)
         for officer in officers_data:
             officer_id = officer.get('id', str(uuid.uuid4()))
@@ -340,10 +338,25 @@ def rank_case():
         for suspect in suspects_data:
             suspect_id = str(uuid.uuid4())
             cursor.execute("""
-                INSERT INTO suspects (id, case_id, account, name, id_card, phone, email, address) 
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO suspests (
+                    id, first_name, last_name, national_id, account, phone_number, email, address, province, district, subdistrict, zipcode, created_at, updated_at, case_number
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (
-                suspect_id, case_id, suspect.get('account'), suspect.get('name'), suspect.get('id_card'), suspect.get('phone'), suspect.get('email'), suspect.get('address')
+                suspect_id,
+                suspect.get('first_name'),
+                suspect.get('last_name'),
+                suspect.get('national_id'),
+                suspect.get('account'),
+                suspect.get('phone_number'),
+                suspect.get('email'),
+                suspect.get('address'),
+                suspect.get('province'),
+                suspect.get('district'),
+                suspect.get('subdistrict'),
+                suspect.get('zipcode'),
+                datetime.datetime.now(),
+                datetime.datetime.now(),
+                case_details.get('case_number')
             ))
 
         # Insert structured evidence (ถ้ามี)
@@ -357,6 +370,7 @@ def rank_case():
             ))
 
         conn.commit()
+        linking_service.update_case_links(case_id)
         conn.close()
         
         return jsonify({"message": "Case created successfully", "case_id": case_id, "priority_score": float(priority_score)}), 201
