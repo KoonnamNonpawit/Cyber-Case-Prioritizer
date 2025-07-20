@@ -442,30 +442,30 @@ def get_all_group_cases(group_case):
         current_app.logger.error(f"Failed to get group cases {group_case}: {e}")
         return jsonify({"error": "Failed to retrieve case details."}), 500
 
-@main_bp.route('/cases/<string:case_id>', methods=['GET'])
-def get_case_by_id(case_id):
+@main_bp.route('/cases/<string:case_number>', methods=['GET'])
+def get_case_by_number(case_number):
     try:
         conn = get_db_conn()
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT * FROM cases WHERE id = ?", (case_id,))
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        cursor.execute("SELECT * FROM cases WHERE case_number = %s", (case_number,))
         case_data = cursor.fetchone()
         
         if not case_data:
             conn.close()
             return jsonify({"error": "Case not found"}), 404
-            
+        
         case_dict = dict(case_data)
         
-        cursor.execute("SELECT * FROM complainants WHERE id = ?", (case_dict['complainant_id'],))
+        cursor.execute("SELECT * FROM complainants WHERE id = %s", (case_dict['complainant_id'],))
         complainant_data = cursor.fetchone()
         case_dict['complainant'] = dict(complainant_data) if complainant_data else None
         
         cursor.execute("""
             SELECT o.* FROM officers o
             JOIN case_officers co ON o.id = co.officer_id
-            WHERE co.case_id = ?
-        """, (case_id,))
+            WHERE co.case_id = %s
+        """, (case_dict['id'],))
         officers_data = cursor.fetchall()
         case_dict['officers'] = [dict(row) for row in officers_data]
 
@@ -473,9 +473,9 @@ def get_case_by_id(case_id):
         return jsonify(case_dict), 200
 
     except Exception as e:
-        current_app.logger.error(f"Failed to get case {case_id}: {e}")
+        current_app.logger.error(f"Failed to get case {case_number}: {e}")
         return jsonify({"error": "Failed to retrieve case details."}), 500
-
+    
 @main_bp.route('/cases/<string:case_id>', methods=['PUT'])
 def update_case(case_id):
     ml_model_pipeline = current_app.config['ML_PIPELINE']
