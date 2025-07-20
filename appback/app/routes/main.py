@@ -355,25 +355,6 @@ def rank_case():
         conn = get_db_conn()
         cursor = conn.cursor()
         
-        # Insert complainant
-        complainant_id = str(uuid.uuid4())
-        cursor.execute("""
-            INSERT INTO complainants (id, first_name, last_name, phone_number, email, address, province, district, subdistrict, zipcode) 
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (
-            complainant_id, 
-            complainant_data['first_name'], complainant_data['last_name'], complainant_data['phone_number'], 
-            complainant_data.get('email'), complainant_data['address'], complainant_data['province'], 
-            complainant_data['district'], complainant_data['subdistrict'], complainant_data['zipcode']
-        ))
-
-        case_id = str(uuid.uuid4())
-        current_time = datetime.datetime.now().isoformat()
-
-        sensitive_data_compromised = bool(case_details_filled.get('sensitive_data_compromised', 0))
-        ongoing_threat = bool(case_details_filled.get('ongoing_threat', 0))
-        risk_of_evidence_loss = bool(case_details_filled.get('risk_of_evidence_loss', 0))
-
         # Insert case
         cursor.execute("""
             INSERT INTO cases (
@@ -386,7 +367,7 @@ def rank_case():
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             case_id, 
-            case_details.get('case_number'), 
+            case_number, 
             case_details.get('case_name'), 
             current_time,               # timestamp as datetime
             current_time,               # last_updated as datetime
@@ -407,6 +388,8 @@ def rank_case():
             None,      # group_id (ถ้าไม่มี ให้ใส่ None)
             None       # suspests (ถ้าไม่มี ให้ใส่ None)
         ))
+        conn.commit()  # <=== ต้อง commit ตรงนี้ก่อน
+
         # Insert officers (ถ้ามี)
         for officer in officers_data:
             officer_id = officer.get('id', str(uuid.uuid4()))
@@ -417,7 +400,7 @@ def rank_case():
                 officer_id, officer['first_name'], officer['last_name'], officer['phone_number'], officer.get('email')
             ))
             cursor.execute("INSERT INTO case_officers (case_id, officer_id) VALUES (%s, %s)", (case_id, officer_id))
-        
+
         # Insert suspects (ถ้ามี)
         for suspect in suspects_data:
             suspect_id = str(uuid.uuid4())
@@ -440,7 +423,7 @@ def rank_case():
                 suspect.get('zipcode'),
                 datetime.datetime.now(),
                 datetime.datetime.now(),
-                case_details.get('case_number')
+                case_number
             ))
 
         # Insert structured evidence (ถ้ามี)
@@ -450,14 +433,16 @@ def rank_case():
                 INSERT INTO structured_evidence (id, case_number, evidence_type, evidence_value, created_timestamp) 
                 VALUES (%s, %s, %s, %s, %s)
             """, (
-                evidence_id, case_id, ev.get('evidence_type'), ev.get('evidence_value'), current_time
+                evidence_id, case_number, ev.get('evidence_type'), ev.get('evidence_value'), current_time
             ))
+
+
 
         conn.commit()
         linking_service.update_case_links(case_id)
         conn.close()
         
-        return jsonify({"message": "Case created successfully", "case_id": case_id, "priority_score": float(priority_score)}), 201
+        return jsonify({"message": "Case created successfully", "case_number": case_number, "priority_score": float(priority_score)}), 201
 
     except Exception as e:
         current_app.logger.error(f"Failed to create case: {e}")
